@@ -70,6 +70,12 @@ const rpcClientMock = {
     resolvePullRequest: vi.fn(),
     preparePullRequestThread: vi.fn(),
   },
+  jira: {
+    getConfigStatus: vi.fn(),
+    listActiveTasks: vi.fn(),
+    getIssueDetail: vi.fn(),
+    runAutomation: vi.fn(),
+  },
   server: {
     getConfig: vi.fn(),
     refreshProviders: vi.fn(),

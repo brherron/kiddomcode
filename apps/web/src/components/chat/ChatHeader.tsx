@@ -9,7 +9,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime";
 import { memo } from "react";
 import GitActionsControl from "../GitActionsControl";
 import { type DraftId } from "~/composerDraftStore";
-import { DiffIcon, TerminalSquareIcon } from "lucide-react";
+import { DiffIcon, TerminalSquareIcon, TicketIcon } from "lucide-react";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import ProjectScriptsControl, { type NewProjectScriptInput } from "../ProjectScriptsControl";
@@ -35,12 +35,14 @@ interface ChatHeaderProps {
   diffToggleShortcutLabel: string | null;
   gitCwd: string | null;
   diffOpen: boolean;
+  jiraOpen: boolean;
   onRunProjectScript: (script: ProjectScript) => void;
   onAddProjectScript: (input: NewProjectScriptInput) => Promise<void>;
   onUpdateProjectScript: (scriptId: string, input: NewProjectScriptInput) => Promise<void>;
   onDeleteProjectScript: (scriptId: string) => Promise<void>;
   onToggleTerminal: () => void;
   onToggleDiff: () => void;
+  onToggleJira: () => void;
 }
 
 export const ChatHeader = memo(function ChatHeader({
@@ -61,12 +63,14 @@ export const ChatHeader = memo(function ChatHeader({
   diffToggleShortcutLabel,
   gitCwd,
   diffOpen,
+  jiraOpen,
   onRunProjectScript,
   onAddProjectScript,
   onUpdateProjectScript,
   onDeleteProjectScript,
   onToggleTerminal,
   onToggleDiff,
+  onToggleJira,
 }: ChatHeaderProps) {
   return (
     <div className="@container/header-actions flex min-w-0 flex-1 items-center gap-2">
@@ -115,6 +119,28 @@ export const ChatHeader = memo(function ChatHeader({
             {...(draftId ? { draftId } : {})}
           />
         )}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Toggle
+                className="shrink-0"
+                pressed={jiraOpen}
+                onPressedChange={onToggleJira}
+                aria-label="Toggle Jira panel"
+                variant="outline"
+                size="xs"
+                disabled={!activeProjectName}
+              >
+                <TicketIcon className="size-3" />
+              </Toggle>
+            }
+          />
+          <TooltipPopup side="bottom">
+            {!activeProjectName
+              ? "Jira is unavailable until this thread has an active project."
+              : "Toggle Jira panel"}
+          </TooltipPopup>
+        </Tooltip>
         <Tooltip>
           <TooltipTrigger
             render={

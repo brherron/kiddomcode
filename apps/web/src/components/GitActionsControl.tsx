@@ -47,6 +47,8 @@ import {
   gitRunStackedActionMutationOptions,
 } from "~/lib/gitReactQuery";
 import { refreshGitStatus, useGitStatus } from "~/lib/gitStatusState";
+import { invalidateJiraQueries } from "~/lib/jiraReactQuery";
+import { resolveJiraIssueKeyForPrAutomation } from "~/lib/jira";
 import { newCommandId, randomUUID } from "~/lib/utils";
 import { resolvePathLinkTarget } from "~/terminal-links";
 import { type DraftId, useComposerDraftStore } from "~/composerDraftStore";
@@ -688,6 +690,39 @@ export default function GitActionsControl({
           });
         } else {
           toastManager.update(resolvedProgressToastId, successToastBase);
+        }
+
+        const jiraIssueKey = resolveJiraIssueKeyForPrAutomation({
+          currentBranch: actionBranch,
+          result,
+        });
+        const jiraApi = activeEnvironmentId ? readEnvironmentApi(activeEnvironmentId) : undefined;
+        if (jiraIssueKey && gitCwd && activeEnvironmentId && jiraApi) {
+          void jiraApi.jira
+            .runAutomation({
+              cwd: gitCwd,
+              issueKey: jiraIssueKey,
+              automation: "on_pr_opened",
+              commentText: `Opened PR: ${result.pr.url}`,
+            })
+            .then(() =>
+              invalidateJiraQueries(queryClient, {
+                environmentId: activeEnvironmentId,
+                cwd: gitCwd,
+                issueKey: jiraIssueKey,
+              }),
+            )
+            .catch((error) => {
+              toastManager.add({
+                type: "warning",
+                title: "Jira automation warning",
+                description:
+                  error instanceof Error
+                    ? error.message
+                    : "The Jira PR-open automation did not complete.",
+                data: scopedToastData,
+              });
+            });
         }
       } catch (err) {
         activeGitActionProgressRef.current = null;

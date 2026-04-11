@@ -14,6 +14,7 @@ import {
   type ThreadId,
   type TurnId,
   type KeybindingCommand,
+  type JiraIssueDetail,
   OrchestrationThreadActivity,
   ProviderInteractionMode,
   RuntimeMode,
@@ -29,7 +30,8 @@ import { applyClaudePromptEffortPrefix } from "@t3tools/shared/model";
 import { projectScriptCwd, projectScriptRuntimeEnv } from "@t3tools/shared/projectScripts";
 import { truncate } from "@t3tools/shared/String";
 import { Debouncer } from "@tanstack/react-pacer";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useShallow } from "zustand/react/shallow";
 import { useGitStatus } from "~/lib/gitStatusState";
@@ -94,7 +96,6 @@ import { useCommandPaletteStore } from "../commandPaletteStore";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
 import { BranchToolbar } from "./BranchToolbar";
 import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
-import PlanSidebar from "./PlanSidebar";
 import ThreadTerminalDrawer from "./ThreadTerminalDrawer";
 import { ChevronDownIcon } from "lucide-react";
 import { cn, randomUUID } from "~/lib/utils";
@@ -171,6 +172,13 @@ import {
 } from "~/rpc/serverState";
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
+import {
+  buildJiraStartWorkPrompt,
+  buildJiraWorktreeBranchName,
+  resolveBaseBranchForJiraStartWork,
+} from "~/lib/jira";
+import { invalidateJiraQueries } from "~/lib/jiraReactQuery";
+import { RightPanel } from "./right-panel/RightPanel";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
   "[User attached one or more images without additional text. Respond using the conversation context and the attached image(s).]";
@@ -655,6 +663,7 @@ export default function ChatView(props: ChatViewProps) {
   const composerTerminalContextsRef = useRef<TerminalContextDraft[]>([]);
   const localComposerRef = useRef<ChatComposerHandle | null>(null);
   const composerRef = useComposerHandleContext() ?? localComposerRef;
+  const queryClient = useQueryClient();
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [expandedImage, setExpandedImage] = useState<ExpandedImagePreview | null>(null);
   const [optimisticUserMessages, setOptimisticUserMessages] = useState<ChatMessage[]>([]);
@@ -674,12 +683,26 @@ export default function ChatView(props: ChatViewProps) {
   >({});
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
-  const [planSidebarOpen, setPlanSidebarOpen] = useState(false);
+  const [expandedWorkGroups, setExpandedWorkGroups] = useState<Record<string, boolean>>({});
+  const [rightPanelState, setRightPanelState] = useState<{
+    open: boolean;
+    tab: "plan" | "jira";
+    selectedIssueKey: string | null;
+  }>({
+    open: false,
+    tab: "plan",
+    selectedIssueKey: null,
+  });
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
   // When set, the thread-change reset effect will open the sidebar instead of closing it.
   // Used by "Implement in a new thread" to carry the sidebar-open intent across navigation.
-  const planSidebarOpenOnNextThreadRef = useRef(false);
+  const rightPanelStateOnNextThreadRef = useRef<{
+    open: boolean;
+    tab: "plan" | "jira";
+    selectedIssueKey: string | null;
+  } | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [pullRequestDialogState, setPullRequestDialogState] =
     useState<PullRequestDialogState | null>(null);
@@ -1107,6 +1130,8 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
+  const planSidebarOpen = rightPanelState.open && rightPanelState.tab === "plan";
+  const jiraPanelOpen = rightPanelState.open && rightPanelState.tab === "jira";
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
     interactionMode === "plan" &&
@@ -1886,8 +1911,9 @@ export default function ChatView(props: ChatViewProps) {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
   const togglePlanSidebar = useCallback(() => {
-    setPlanSidebarOpen((open) => {
-      if (open) {
+    setRightPanelState((current) => {
+      const closingPlanPanel = current.open && current.tab === "plan";
+      if (closingPlanPanel) {
         const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
         if (turnKey) {
           planSidebarDismissedForTurnRef.current = turnKey;
@@ -1895,7 +1921,32 @@ export default function ChatView(props: ChatViewProps) {
       } else {
         planSidebarDismissedForTurnRef.current = null;
       }
-      return !open;
+      return {
+        ...current,
+        open: !closingPlanPanel,
+        tab: "plan",
+      };
+    });
+  }, [activePlan?.turnId, sidebarProposedPlan?.turnId]);
+  const toggleJiraPanel = useCallback(() => {
+    setRightPanelState((current) => ({
+      ...current,
+      open: !(current.open && current.tab === "jira"),
+      tab: "jira",
+    }));
+  }, []);
+  const closeRightPanel = useCallback(() => {
+    setRightPanelState((current) => {
+      if (current.tab === "plan") {
+        const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
+        if (turnKey) {
+          planSidebarDismissedForTurnRef.current = turnKey;
+        }
+      }
+      return {
+        ...current,
+        open: false,
+      };
     });
   }, [activePlan?.turnId, sidebarProposedPlan?.turnId]);
 
@@ -1980,11 +2031,15 @@ export default function ChatView(props: ChatViewProps) {
     isAtEndRef.current = true;
     showScrollDebouncer.current.cancel();
     setShowScrollToBottom(false);
-    if (planSidebarOpenOnNextThreadRef.current) {
-      planSidebarOpenOnNextThreadRef.current = false;
-      setPlanSidebarOpen(true);
+    if (rightPanelStateOnNextThreadRef.current) {
+      setRightPanelState(rightPanelStateOnNextThreadRef.current);
+      rightPanelStateOnNextThreadRef.current = null;
     } else {
-      setPlanSidebarOpen(false);
+      setRightPanelState((current) => ({
+        ...current,
+        open: false,
+        selectedIssueKey: null,
+      }));
     }
     planSidebarDismissedForTurnRef.current = null;
   }, [activeThread?.id]);
@@ -2905,7 +2960,11 @@ export default function ChatView(props: ChatViewProps) {
         // step-tracking activities that the sidebar will display.
         if (nextInteractionMode === "default") {
           planSidebarDismissedForTurnRef.current = null;
-          setPlanSidebarOpen(true);
+          setRightPanelState((current) => ({
+            ...current,
+            open: true,
+            tab: "plan",
+          }));
         }
         sendInFlightRef.current = false;
       } catch (err) {
@@ -3024,8 +3083,11 @@ export default function ChatView(props: ChatViewProps) {
         return waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId));
       })
       .then(() => {
-        // Signal that the plan sidebar should open on the new thread.
-        planSidebarOpenOnNextThreadRef.current = true;
+        rightPanelStateOnNextThreadRef.current = {
+          open: true,
+          tab: "plan",
+          selectedIssueKey: null,
+        };
         return navigate({
           to: "/$environmentId/$threadId",
           params: {
@@ -3064,6 +3126,139 @@ export default function ChatView(props: ChatViewProps) {
     runtimeMode,
     environmentId,
   ]);
+  const onStartWorkWithJiraIssue = useCallback(
+    async (issue: JiraIssueDetail) => {
+      const api = readEnvironmentApi(environmentId);
+      if (!api || !activeProject || !activeThread) {
+        return;
+      }
+      if (!isGitRepo) {
+        toastManager.add({
+          type: "error",
+          title: "Start Work is unavailable",
+          description: "This project must be backed by git before Codex can start Jira work.",
+        });
+        return;
+      }
+
+      const fallbackBranch = gitStatusQuery.data?.branch ?? null;
+      let baseBranch = fallbackBranch;
+      try {
+        const branchResult = await api.git.listBranches({
+          cwd: activeProject.cwd,
+          limit: 100,
+        });
+        baseBranch = resolveBaseBranchForJiraStartWork(branchResult.branches, fallbackBranch);
+      } catch {
+        baseBranch = fallbackBranch;
+      }
+
+      if (!baseBranch) {
+        toastManager.add({
+          type: "error",
+          title: "Base branch unavailable",
+          description: "Could not determine a base branch for the Jira worktree.",
+        });
+        return;
+      }
+
+      const branchName = buildJiraWorktreeBranchName(issue.key, issue.summary);
+      const createdAt = new Date().toISOString();
+
+      try {
+        const worktree = await api.git.createWorktree({
+          cwd: activeProject.cwd,
+          branch: baseBranch,
+          newBranch: branchName,
+          path: null,
+        });
+
+        try {
+          await api.jira.runAutomation({
+            cwd: activeProject.cwd,
+            issueKey: issue.key,
+            automation: "on_branch_created",
+          });
+        } catch (error) {
+          toastManager.add({
+            type: "warning",
+            title: "Jira automation warning",
+            description:
+              error instanceof Error
+                ? error.message
+                : "The Jira branch-created automation did not complete.",
+          });
+        }
+
+        const nextThreadId = newThreadId();
+        const nextThreadTitle = truncate(`${issue.key} ${issue.summary}`);
+        await api.orchestration.dispatchCommand({
+          type: "thread.create",
+          commandId: newCommandId(),
+          threadId: nextThreadId,
+          projectId: activeProject.id,
+          title: nextThreadTitle,
+          modelSelection: activeThread.modelSelection,
+          runtimeMode: activeThread.runtimeMode,
+          interactionMode: activeThread.interactionMode,
+          branch: worktree.worktree.branch,
+          worktreePath: worktree.worktree.path,
+          createdAt,
+        });
+        await api.orchestration.dispatchCommand({
+          type: "thread.turn.start",
+          commandId: newCommandId(),
+          threadId: nextThreadId,
+          message: {
+            messageId: newMessageId(),
+            role: "user",
+            text: buildJiraStartWorkPrompt(issue),
+            attachments: [],
+          },
+          modelSelection: activeThread.modelSelection,
+          titleSeed: nextThreadTitle,
+          runtimeMode: activeThread.runtimeMode,
+          interactionMode: activeThread.interactionMode,
+          createdAt,
+        });
+        await waitForStartedServerThread(scopeThreadRef(environmentId, nextThreadId));
+        rightPanelStateOnNextThreadRef.current = {
+          open: true,
+          tab: "jira",
+          selectedIssueKey: issue.key,
+        };
+        // Post-creation cleanup: failures here should not surface as "Could not start Jira work"
+        // since the worktree, thread, and first turn were already created successfully.
+        void invalidateJiraQueries(queryClient, {
+          environmentId,
+          cwd: activeProject.cwd,
+        }).catch(() => {});
+        await navigate({
+          to: "/$environmentId/$threadId",
+          params: {
+            environmentId,
+            threadId: nextThreadId,
+          },
+        }).catch(() => {});
+      } catch (error) {
+        toastManager.add({
+          type: "error",
+          title: "Could not start Jira work",
+          description:
+            error instanceof Error ? error.message : "An error occurred while starting Jira work.",
+        });
+      }
+    },
+    [
+      activeProject,
+      activeThread,
+      environmentId,
+      gitStatusQuery.data?.branch,
+      isGitRepo,
+      navigate,
+      queryClient,
+    ],
+  );
 
   const onProviderModelSelect = useCallback(
     (provider: ProviderKind, model: string) => {
@@ -3205,12 +3400,14 @@ export default function ChatView(props: ChatViewProps) {
           diffToggleShortcutLabel={diffPanelShortcutLabel}
           gitCwd={gitCwd}
           diffOpen={diffOpen}
+          jiraOpen={jiraPanelOpen}
           onRunProjectScript={runProjectScript}
           onAddProjectScript={saveProjectScript}
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
           onToggleDiff={onToggleDiff}
+          onToggleJira={toggleJiraPanel}
         />
       </header>
 
@@ -3220,7 +3417,7 @@ export default function ChatView(props: ChatViewProps) {
         error={activeThread.error}
         onDismiss={() => setThreadError(activeThread.id, null)}
       />
-      {/* Main content area with optional plan sidebar */}
+      {/* Main content area with optional right panel */}
       <div className="flex min-h-0 min-w-0 flex-1">
         {/* Chat column */}
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -3381,23 +3578,35 @@ export default function ChatView(props: ChatViewProps) {
         </div>
         {/* end chat column */}
 
-        {/* Plan sidebar */}
-        {planSidebarOpen ? (
-          <PlanSidebar
-            activePlan={activePlan}
-            activeProposedPlan={sidebarProposedPlan}
+        {rightPanelState.open ? (
+          <RightPanel
+            tab={rightPanelState.tab}
+            onTabChange={(tab) =>
+              setRightPanelState((current) => ({
+                ...current,
+                open: true,
+                tab,
+              }))
+            }
+            onClose={closeRightPanel}
             environmentId={environmentId}
             markdownCwd={gitCwd ?? undefined}
             workspaceRoot={activeWorkspaceRoot}
             timestampFormat={timestampFormat}
-            onClose={() => {
-              setPlanSidebarOpen(false);
-              // Track that the user explicitly dismissed for this turn so auto-open won't fight them.
-              const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
-              if (turnKey) {
-                planSidebarDismissedForTurnRef.current = turnKey;
-              }
-            }}
+            activePlan={activePlan}
+            activeProposedPlan={sidebarProposedPlan}
+            jiraCwd={activeProject?.cwd ?? null}
+            selectedIssueKey={rightPanelState.selectedIssueKey}
+            onSelectIssueKey={(issueKey) =>
+              setRightPanelState((current) => ({
+                ...current,
+                selectedIssueKey: issueKey,
+              }))
+            }
+            onStartWork={onStartWorkWithJiraIssue}
+            currentBranch={activeThread.branch ?? gitStatusQuery.data?.branch ?? null}
+            hasGitRepo={isGitRepo}
+            isWorking={isWorking}
           />
         ) : null}
       </div>

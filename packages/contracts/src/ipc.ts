@@ -19,6 +19,16 @@ import type {
   GitCreateBranchResult,
 } from "./git";
 import type {
+  JiraConfigStatusResult,
+  JiraGetConfigStatusInput,
+  JiraGetIssueDetailInput,
+  JiraGetIssueDetailResult,
+  JiraListActiveTasksInput,
+  JiraListActiveTasksResult,
+  JiraRunAutomationInput,
+  JiraRunAutomationResult,
+} from "./jira";
+import type {
   ProjectSearchEntriesInput,
   ProjectSearchEntriesResult,
   ProjectWriteFileInput,
@@ -248,6 +258,12 @@ export interface EnvironmentApi {
         onResubscribe?: () => void;
       },
     ) => () => void;
+  };
+  jira: {
+    getConfigStatus: (input: JiraGetConfigStatusInput) => Promise<JiraConfigStatusResult>;
+    listActiveTasks: (input: JiraListActiveTasksInput) => Promise<JiraListActiveTasksResult>;
+    getIssueDetail: (input: JiraGetIssueDetailInput) => Promise<JiraGetIssueDetailResult>;
+    runAutomation: (input: JiraRunAutomationInput) => Promise<JiraRunAutomationResult>;
   };
   orchestration: {
     dispatchCommand: (command: ClientOrchestrationCommand) => Promise<{ sequence: number }>;

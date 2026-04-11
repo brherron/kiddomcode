@@ -4691,6 +4691,46 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("inserts provider slash commands into the composer", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-provider-command-target" as MessageId,
+        targetText: "provider command thread",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          providers: nextFixture.serverConfig.providers.map((provider) =>
+            provider.provider === "codex"
+              ? {
+                  ...provider,
+                  slashCommands: [
+                    {
+                      name: "compact",
+                      description: "Compact this thread's context window.",
+                    },
+                  ],
+                }
+              : provider,
+          ),
+        };
+      },
+    });
+
+    try {
+      await waitForComposerEditor();
+      await page.getByTestId("composer-editor").fill("/");
+
+      const menuItem = await waitForComposerMenuItem("provider-slash-command:codex:compact");
+      menuItem.click();
+
+      await waitForComposerText("/compact ");
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("shows a tooltip with the skill description when hovering a skill pill", async () => {
     const mounted = await mountChatView({
       viewport: DEFAULT_VIEWPORT,

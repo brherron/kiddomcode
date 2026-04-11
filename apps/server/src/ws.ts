@@ -4,6 +4,7 @@ import {
   AuthSessionId,
   CommandId,
   EventId,
+  JiraError,
   type OrchestrationCommand,
   type GitActionProgressEvent,
   type GitManagerServiceError,
@@ -46,6 +47,7 @@ import { ServerLifecycleEvents } from "./serverLifecycleEvents";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup";
 import { ServerSettingsService } from "./serverSettings";
 import { TerminalManager } from "./terminal/Services/Manager";
+import { JiraService } from "./jira/Services/JiraService";
 import { WorkspaceEntries } from "./workspace/Services/WorkspaceEntries";
 import { WorkspaceFileSystem } from "./workspace/Services/WorkspaceFileSystem";
 import { WorkspacePathOutsideRootError } from "./workspace/Services/WorkspacePaths";
@@ -139,6 +141,7 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
       const git = yield* GitCore;
       const gitStatusBroadcaster = yield* GitStatusBroadcaster;
       const terminalManager = yield* TerminalManager;
+      const jiraService = yield* JiraService;
       const providerRegistry = yield* ProviderRegistry;
       const config = yield* ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents;
@@ -867,6 +870,37 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             git.initRepo(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "git" },
           ),
+        [WS_METHODS.jiraGetConfigStatus]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraGetConfigStatus, jiraService.getConfigStatus(input.cwd), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraListActiveTasks]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraListActiveTasks,
+            jiraService.listActiveTasks(input.cwd).pipe(
+              Effect.mapError((cause) =>
+                Schema.is(JiraError)(cause)
+                  ? cause
+                  : new JiraError({
+                      kind: "fetch",
+                      operation: "jira.listActiveTasks",
+                      message: "Failed to load Jira active tasks.",
+                      cause,
+                    }),
+              ),
+            ),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraGetIssueDetail]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraGetIssueDetail,
+            jiraService.getIssueDetail(input.cwd, input.issueKey),
+            { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraRunAutomation]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraRunAutomation, jiraService.runAutomation(input), {
+            "rpc.aggregate": "jira",
+          }),
         [WS_METHODS.terminalOpen]: (input) =>
           observeRpcEffect(WS_METHODS.terminalOpen, terminalManager.open(input), {
             "rpc.aggregate": "terminal",

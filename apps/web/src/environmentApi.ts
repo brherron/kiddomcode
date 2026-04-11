@@ -31,6 +31,12 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
       resolvePullRequest: rpcClient.git.resolvePullRequest,
       preparePullRequestThread: rpcClient.git.preparePullRequestThread,
     },
+    jira: {
+      getConfigStatus: rpcClient.jira.getConfigStatus,
+      listActiveTasks: rpcClient.jira.listActiveTasks,
+      getIssueDetail: rpcClient.jira.getIssueDetail,
+      runAutomation: rpcClient.jira.runAutomation,
+    },
     orchestration: {
       dispatchCommand: rpcClient.orchestration.dispatchCommand,
       getTurnDiff: rpcClient.orchestration.getTurnDiff,

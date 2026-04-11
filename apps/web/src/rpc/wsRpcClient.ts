@@ -4,6 +4,14 @@ import {
   type GitRunStackedActionResult,
   type GitStatusResult,
   type GitStatusStreamEvent,
+  type JiraConfigStatusResult,
+  type JiraGetConfigStatusInput,
+  type JiraGetIssueDetailResult,
+  type JiraGetIssueDetailInput,
+  type JiraListActiveTasksResult,
+  type JiraListActiveTasksInput,
+  type JiraRunAutomationResult,
+  type JiraRunAutomationInput,
   type LocalApi,
   ORCHESTRATION_WS_METHODS,
   type ServerSettingsPatch,
@@ -96,6 +104,14 @@ export interface WsRpcClient {
     readonly preparePullRequestThread: RpcUnaryMethod<
       typeof WS_METHODS.gitPreparePullRequestThread
     >;
+  };
+  readonly jira: {
+    readonly getConfigStatus: (input: JiraGetConfigStatusInput) => Promise<JiraConfigStatusResult>;
+    readonly listActiveTasks: (
+      input: JiraListActiveTasksInput,
+    ) => Promise<JiraListActiveTasksResult>;
+    readonly getIssueDetail: (input: JiraGetIssueDetailInput) => Promise<JiraGetIssueDetailResult>;
+    readonly runAutomation: (input: JiraRunAutomationInput) => Promise<JiraRunAutomationResult>;
   };
   readonly server: {
     readonly getConfig: RpcUnaryNoArgMethod<typeof WS_METHODS.serverGetConfig>;
@@ -197,6 +213,16 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
         transport.request((client) => client[WS_METHODS.gitResolvePullRequest](input)),
       preparePullRequestThread: (input) =>
         transport.request((client) => client[WS_METHODS.gitPreparePullRequestThread](input)),
+    },
+    jira: {
+      getConfigStatus: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetConfigStatus](input)),
+      listActiveTasks: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraListActiveTasks](input)),
+      getIssueDetail: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetIssueDetail](input)),
+      runAutomation: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraRunAutomation](input)),
     },
     server: {
       getConfig: () => transport.request((client) => client[WS_METHODS.serverGetConfig]({})),

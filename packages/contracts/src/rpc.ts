@@ -3,6 +3,17 @@ import * as Rpc from "effect/unstable/rpc/Rpc";
 import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 
 import { OpenError, OpenInEditorInput } from "./editor";
+import {
+  JiraConfigStatusResult,
+  JiraError,
+  JiraGetConfigStatusInput,
+  JiraGetIssueDetailInput,
+  JiraGetIssueDetailResult,
+  JiraListActiveTasksInput,
+  JiraListActiveTasksResult,
+  JiraRunAutomationInput,
+  JiraRunAutomationResult,
+} from "./jira";
 import { AuthAccessStreamEvent } from "./auth";
 import {
   GitActionProgressEvent,
@@ -95,6 +106,10 @@ export const WS_METHODS = {
   gitInit: "git.init",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
+  jiraGetConfigStatus: "jira.getConfigStatus",
+  jiraListActiveTasks: "jira.listActiveTasks",
+  jiraGetIssueDetail: "jira.getIssueDetail",
+  jiraRunAutomation: "jira.runAutomation",
 
   // Terminal methods
   terminalOpen: "terminal.open",
@@ -237,6 +252,30 @@ export const WsGitInitRpc = Rpc.make(WS_METHODS.gitInit, {
   error: GitCommandError,
 });
 
+export const WsJiraGetConfigStatusRpc = Rpc.make(WS_METHODS.jiraGetConfigStatus, {
+  payload: JiraGetConfigStatusInput,
+  success: JiraConfigStatusResult,
+  error: JiraError,
+});
+
+export const WsJiraListActiveTasksRpc = Rpc.make(WS_METHODS.jiraListActiveTasks, {
+  payload: JiraListActiveTasksInput,
+  success: JiraListActiveTasksResult,
+  error: JiraError,
+});
+
+export const WsJiraGetIssueDetailRpc = Rpc.make(WS_METHODS.jiraGetIssueDetail, {
+  payload: JiraGetIssueDetailInput,
+  success: JiraGetIssueDetailResult,
+  error: JiraError,
+});
+
+export const WsJiraRunAutomationRpc = Rpc.make(WS_METHODS.jiraRunAutomation, {
+  payload: JiraRunAutomationInput,
+  success: JiraRunAutomationResult,
+  error: JiraError,
+});
+
 export const WsTerminalOpenRpc = Rpc.make(WS_METHODS.terminalOpen, {
   payload: TerminalOpenInput,
   success: TerminalSessionSnapshot,
@@ -362,6 +401,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitCreateBranchRpc,
   WsGitCheckoutRpc,
   WsGitInitRpc,
+  WsJiraGetConfigStatusRpc,
+  WsJiraListActiveTasksRpc,
+  WsJiraGetIssueDetailRpc,
+  WsJiraRunAutomationRpc,
   WsTerminalOpenRpc,
   WsTerminalWriteRpc,
   WsTerminalResizeRpc,
