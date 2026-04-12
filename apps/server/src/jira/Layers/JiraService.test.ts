@@ -157,13 +157,15 @@ describe("JiraServiceLive", () => {
   it("lists active tasks with the expected JQL and minimal fields", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
-        const fetchSpy = vi.fn(async (input: string | URL) => {
+        const fetchSpy = vi.fn(async (input: string | URL, init?: RequestInit) => {
           const url = new URL(typeof input === "string" ? input : input.toString());
-          expect(url.pathname).toBe("/rest/api/3/search");
-          expect(url.searchParams.get("jql")).toBe(
-            "assignee = currentUser() AND sprint in openSprints() AND status != Done ORDER BY updated DESC",
+          expect(url.pathname).toBe("/rest/api/3/search/jql");
+          expect(init?.method).toBe("POST");
+          const body = JSON.parse(init?.body as string);
+          expect(body.jql).toBe(
+            "assignee = currentUser() AND status != Done ORDER BY updated DESC",
           );
-          expect(url.searchParams.get("fields")).toBe("summary,status");
+          expect(body.fields).toEqual(["summary", "status"]);
 
           return new Response(
             JSON.stringify({

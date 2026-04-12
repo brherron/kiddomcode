@@ -10,6 +10,7 @@ import {
   DiffPanelShell,
   type DiffPanelMode,
 } from "../components/DiffPanelShell";
+import { ToolsPanelContent } from "../components/tools-panel/ToolsPanel";
 import { finalizePromotedDraftThreadByRef, useComposerDraftStore } from "../composerDraftStore";
 import {
   type DiffRouteSearch,
@@ -17,8 +18,14 @@ import {
   stripDiffSearchParams,
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
-import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
+import { useJiraToolsStore } from "../jiraToolsStore";
+import { selectEnvironmentState, selectThreadByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
+import {
+  closeToolsPanel,
+  openToolsPanelTarget,
+  type ToolsPanelRouteState,
+} from "../toolsPanelState";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
 import { Sheet, SheetPopup } from "../components/ui/sheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
@@ -26,21 +33,17 @@ import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/component
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
 const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
 const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
-const DIFF_INLINE_DEFAULT_WIDTH = "clamp(28rem,48vw,44rem)";
+const DIFF_INLINE_DEFAULT_WIDTH = "450px";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
 const COMPOSER_COMPACT_MIN_LEFT_CONTROLS_WIDTH_PX = 208;
 
-const DiffPanelSheet = (props: {
-  children: ReactNode;
-  diffOpen: boolean;
-  onCloseDiff: () => void;
-}) => {
+const DiffPanelSheet = (props: { children: ReactNode; open: boolean; onClose: () => void }) => {
   return (
     <Sheet
-      open={props.diffOpen}
+      open={props.open}
       onOpenChange={(open) => {
         if (!open) {
-          props.onCloseDiff();
+          props.onClose();
         }
       }}
     >
@@ -74,22 +77,24 @@ const LazyDiffPanel = (props: { mode: DiffPanelMode }) => {
   );
 };
 
-const DiffPanelInlineSidebar = (props: {
-  diffOpen: boolean;
-  onCloseDiff: () => void;
-  onOpenDiff: () => void;
+const ToolsInlineSidebar = (props: {
+  environmentId: string;
+  toolsOpen: boolean;
+  onClose: () => void;
+  onOpen: () => void;
+  activeTab: "git" | "jira";
   renderDiffContent: boolean;
 }) => {
-  const { diffOpen, onCloseDiff, onOpenDiff, renderDiffContent } = props;
+  const { toolsOpen, onClose, onOpen, renderDiffContent } = props;
   const onOpenChange = useCallback(
     (open: boolean) => {
       if (open) {
-        onOpenDiff();
+        onOpen();
         return;
       }
-      onCloseDiff();
+      onClose();
     },
-    [onCloseDiff, onOpenDiff],
+    [onClose, onOpen],
   );
   const shouldAcceptInlineSidebarWidth = useCallback(
     ({ nextWidth, wrapper }: { nextWidth: number; wrapper: HTMLElement }) => {
@@ -140,7 +145,7 @@ const DiffPanelInlineSidebar = (props: {
   return (
     <SidebarProvider
       defaultOpen={false}
-      open={diffOpen}
+      open={toolsOpen}
       onOpenChange={onOpenChange}
       className="w-auto min-h-0 flex-none bg-transparent"
       style={{ "--sidebar-width": DIFF_INLINE_DEFAULT_WIDTH } as React.CSSProperties}
@@ -155,7 +160,11 @@ const DiffPanelInlineSidebar = (props: {
           storageKey: DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY,
         }}
       >
-        {renderDiffContent ? <LazyDiffPanel mode="sidebar" /> : null}
+        <ToolsPanelContent
+          environmentId={props.environmentId as any}
+          activeTab={props.activeTab}
+          diffContent={renderDiffContent ? <LazyDiffPanel mode="sidebar" /> : null}
+        />
         <SidebarRail />
       </Sidebar>
     </SidebarProvider>
@@ -191,52 +200,70 @@ function ChatThreadRouteView() {
   const routeThreadExists = threadExists || draftThreadExists;
   const serverThreadStarted = threadHasStarted(serverThread);
   const environmentHasAnyThreads = environmentHasServerThreads || environmentHasDraftThreads;
+
+  // ── Tools panel open state ──
+  // The panel is open when either diff is active (URL param) or jira is active (store).
   const diffOpen = search.diff === "1";
+  const jiraOpen = useJiraToolsStore((s) => s.jiraOpen);
+  const toolsTab = useJiraToolsStore((s) => s.toolsTab);
+  const setJiraOpen = useJiraToolsStore((s) => s.setJiraOpen);
+  const setToolsTab = useJiraToolsStore((s) => s.setToolsTab);
+  const toolsOpen = diffOpen || jiraOpen;
+
   const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
-  const currentThreadKey = threadRef ? `${threadRef.environmentId}:${threadRef.threadId}` : null;
-  const [diffPanelMountState, setDiffPanelMountState] = useState(() => ({
-    threadKey: currentThreadKey,
-    hasOpenedDiff: diffOpen,
-  }));
-  const hasOpenedDiff =
-    diffPanelMountState.threadKey === currentThreadKey
-      ? diffPanelMountState.hasOpenedDiff
-      : diffOpen;
-  const markDiffOpened = useCallback(() => {
-    setDiffPanelMountState((previous) => {
-      if (previous.threadKey === currentThreadKey && previous.hasOpenedDiff) {
-        return previous;
+  const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
+
+  const applyToolsPanelState = useCallback(
+    (nextState: ToolsPanelRouteState) => {
+      if (toolsTab !== nextState.toolsTab) {
+        setToolsTab(nextState.toolsTab);
       }
-      return {
-        threadKey: currentThreadKey,
-        hasOpenedDiff: true,
-      };
-    });
-  }, [currentThreadKey]);
-  const closeDiff = useCallback(() => {
-    if (!threadRef) {
-      return;
+      if (jiraOpen !== nextState.jiraOpen) {
+        setJiraOpen(nextState.jiraOpen);
+      }
+      if (diffOpen === nextState.diffOpen || !threadRef) {
+        return;
+      }
+
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(threadRef),
+        search: (previous) => ({
+          ...stripDiffSearchParams(previous),
+          diff: nextState.diffOpen ? "1" : undefined,
+        }),
+      });
+    },
+    [diffOpen, jiraOpen, navigate, setJiraOpen, setToolsTab, threadRef, toolsTab],
+  );
+
+  const closeTools = useCallback(() => {
+    applyToolsPanelState(closeToolsPanel({ diffOpen, jiraOpen, toolsTab }));
+  }, [applyToolsPanelState, diffOpen, jiraOpen, toolsTab]);
+
+  const openTools = useCallback(() => {
+    applyToolsPanelState(
+      openToolsPanelTarget(
+        {
+          diffOpen,
+          jiraOpen,
+          toolsTab,
+        },
+        toolsTab,
+      ),
+    );
+  }, [applyToolsPanelState, diffOpen, jiraOpen, toolsTab]);
+
+  // When diff opens via URL, switch to git tab
+  useEffect(() => {
+    if (diffOpen) {
+      setHasOpenedDiff(true);
+      setToolsTab("git");
     }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-      search: { diff: undefined },
-    });
-  }, [navigate, threadRef]);
-  const openDiff = useCallback(() => {
-    if (!threadRef) {
-      return;
-    }
-    markDiffOpened();
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: buildThreadRouteParams(threadRef),
-      search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return { ...rest, diff: "1" };
-      },
-    });
-  }, [markDiffOpened, navigate, threadRef]);
+  }, [diffOpen, setToolsTab]);
+
+  // When jira opens, ensure diff doesn't also force open
+  // (jiraOpen is independent of URL)
 
   useEffect(() => {
     if (!threadRef || !bootstrapComplete) {
@@ -273,10 +300,12 @@ function ChatThreadRouteView() {
             routeKind="server"
           />
         </SidebarInset>
-        <DiffPanelInlineSidebar
-          diffOpen={diffOpen}
-          onCloseDiff={closeDiff}
-          onOpenDiff={openDiff}
+        <ToolsInlineSidebar
+          environmentId={threadRef.environmentId}
+          toolsOpen={toolsOpen}
+          onClose={closeTools}
+          onOpen={openTools}
+          activeTab={toolsTab}
           renderDiffContent={shouldRenderDiffContent}
         />
       </>
@@ -293,8 +322,12 @@ function ChatThreadRouteView() {
           routeKind="server"
         />
       </SidebarInset>
-      <DiffPanelSheet diffOpen={diffOpen} onCloseDiff={closeDiff}>
-        {shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
+      <DiffPanelSheet open={toolsOpen} onClose={closeTools}>
+        <ToolsPanelContent
+          environmentId={threadRef.environmentId as any}
+          activeTab={toolsTab}
+          diffContent={shouldRenderDiffContent ? <LazyDiffPanel mode="sheet" /> : null}
+        />
       </DiffPanelSheet>
     </>
   );

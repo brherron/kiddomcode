@@ -173,11 +173,16 @@ import {
 import { sanitizeThreadErrorMessage } from "~/rpc/transportError";
 import { retainThreadDetailSubscription } from "../environments/runtime/service";
 import {
+  buildJiraContinueWorkPrompt,
+  buildJiraStartReviewPrompt,
   buildJiraStartWorkPrompt,
   buildJiraWorktreeBranchName,
   resolveBaseBranchForJiraStartWork,
 } from "~/lib/jira";
 import { invalidateJiraQueries } from "~/lib/jiraReactQuery";
+import type { JiraWorkActionOption } from "~/lib/jiraWorkActions";
+import { useJiraToolsStore } from "~/jiraToolsStore";
+import { toggleToolsPanelTarget, type ToolsPanelRouteState } from "~/toolsPanelState";
 import { RightPanel } from "./right-panel/RightPanel";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
@@ -684,24 +689,12 @@ export default function ChatView(props: ChatViewProps) {
   const [pendingUserInputQuestionIndexByRequestId, setPendingUserInputQuestionIndexByRequestId] =
     useState<Record<string, number>>({});
   const [expandedWorkGroups, setExpandedWorkGroups] = useState<Record<string, boolean>>({});
-  const [rightPanelState, setRightPanelState] = useState<{
-    open: boolean;
-    tab: "plan" | "jira";
-    selectedIssueKey: string | null;
-  }>({
-    open: false,
-    tab: "plan",
-    selectedIssueKey: null,
-  });
+  const [planPanelOpen, setPlanPanelOpen] = useState(false);
+  const jiraPanelOpen = useJiraToolsStore((s) => s.jiraOpen);
+  const toolsTab = useJiraToolsStore((s) => s.toolsTab);
   // Tracks whether the user explicitly dismissed the sidebar for the active turn.
   const planSidebarDismissedForTurnRef = useRef<string | null>(null);
-  // When set, the thread-change reset effect will open the sidebar instead of closing it.
-  // Used by "Implement in a new thread" to carry the sidebar-open intent across navigation.
-  const rightPanelStateOnNextThreadRef = useRef<{
-    open: boolean;
-    tab: "plan" | "jira";
-    selectedIssueKey: string | null;
-  } | null>(null);
+  const planPanelOpenOnNextThreadRef = useRef<boolean | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [terminalFocusRequestId, setTerminalFocusRequestId] = useState(0);
   const [pullRequestDialogState, setPullRequestDialogState] =
@@ -1130,8 +1123,7 @@ export default function ChatView(props: ChatViewProps) {
     () => deriveActivePlanState(threadActivities, activeLatestTurn?.turnId ?? undefined),
     [activeLatestTurn?.turnId, threadActivities],
   );
-  const planSidebarOpen = rightPanelState.open && rightPanelState.tab === "plan";
-  const jiraPanelOpen = rightPanelState.open && rightPanelState.tab === "jira";
+  const planSidebarOpen = planPanelOpen;
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
     interactionMode === "plan" &&
@@ -1479,26 +1471,51 @@ export default function ChatView(props: ChatViewProps) {
     () => shortcutLabelForCommand(keybindings, "diff.toggle", nonTerminalShortcutLabelOptions),
     [keybindings, nonTerminalShortcutLabelOptions],
   );
-  const onToggleDiff = useCallback(() => {
+  const applyToolsPanelState = useCallback(
+    (nextState: ToolsPanelRouteState) => {
+      if (!isServerThread) {
+        return;
+      }
+
+      const store = useJiraToolsStore.getState();
+      if (store.toolsTab !== nextState.toolsTab) {
+        store.setToolsTab(nextState.toolsTab);
+      }
+      if (store.jiraOpen !== nextState.jiraOpen) {
+        store.setJiraOpen(nextState.jiraOpen);
+      }
+      if (diffOpen === nextState.diffOpen) {
+        return;
+      }
+
+      void navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId },
+        replace: true,
+        search: (previous) => ({
+          ...stripDiffSearchParams(previous),
+          diff: nextState.diffOpen ? "1" : undefined,
+        }),
+      });
+    },
+    [diffOpen, environmentId, isServerThread, navigate, threadId],
+  );
+  const onToggleGit = useCallback(() => {
     if (!isServerThread) {
       return;
     }
-    if (!diffOpen) {
-      onDiffPanelOpen?.();
-    }
-    void navigate({
-      to: "/$environmentId/$threadId",
-      params: {
-        environmentId,
-        threadId,
-      },
-      replace: true,
-      search: (previous) => {
-        const rest = stripDiffSearchParams(previous);
-        return diffOpen ? { ...rest, diff: undefined } : { ...rest, diff: "1" };
-      },
-    });
-  }, [diffOpen, environmentId, isServerThread, navigate, onDiffPanelOpen, threadId]);
+
+    applyToolsPanelState(
+      toggleToolsPanelTarget(
+        {
+          diffOpen,
+          jiraOpen: jiraPanelOpen,
+          toolsTab,
+        },
+        "git",
+      ),
+    );
+  }, [applyToolsPanelState, diffOpen, isServerThread, jiraPanelOpen, toolsTab]);
 
   const envLocked = Boolean(
     activeThread &&
@@ -1911,9 +1928,8 @@ export default function ChatView(props: ChatViewProps) {
     handleInteractionModeChange(interactionMode === "plan" ? "default" : "plan");
   }, [handleInteractionModeChange, interactionMode]);
   const togglePlanSidebar = useCallback(() => {
-    setRightPanelState((current) => {
-      const closingPlanPanel = current.open && current.tab === "plan";
-      if (closingPlanPanel) {
+    setPlanPanelOpen((current) => {
+      if (current) {
         const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
         if (turnKey) {
           planSidebarDismissedForTurnRef.current = turnKey;
@@ -1921,33 +1937,27 @@ export default function ChatView(props: ChatViewProps) {
       } else {
         planSidebarDismissedForTurnRef.current = null;
       }
-      return {
-        ...current,
-        open: !closingPlanPanel,
-        tab: "plan",
-      };
+      return !current;
     });
   }, [activePlan?.turnId, sidebarProposedPlan?.turnId]);
   const toggleJiraPanel = useCallback(() => {
-    setRightPanelState((current) => ({
-      ...current,
-      open: !(current.open && current.tab === "jira"),
-      tab: "jira",
-    }));
-  }, []);
-  const closeRightPanel = useCallback(() => {
-    setRightPanelState((current) => {
-      if (current.tab === "plan") {
-        const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
-        if (turnKey) {
-          planSidebarDismissedForTurnRef.current = turnKey;
-        }
-      }
-      return {
-        ...current,
-        open: false,
-      };
-    });
+    applyToolsPanelState(
+      toggleToolsPanelTarget(
+        {
+          diffOpen,
+          jiraOpen: jiraPanelOpen,
+          toolsTab,
+        },
+        "jira",
+      ),
+    );
+  }, [applyToolsPanelState, diffOpen, jiraPanelOpen, toolsTab]);
+  const closePlanPanel = useCallback(() => {
+    const turnKey = activePlan?.turnId ?? sidebarProposedPlan?.turnId ?? null;
+    if (turnKey) {
+      planSidebarDismissedForTurnRef.current = turnKey;
+    }
+    setPlanPanelOpen(false);
   }, [activePlan?.turnId, sidebarProposedPlan?.turnId]);
 
   const persistThreadSettingsForNextTurn = useCallback(
@@ -2031,15 +2041,11 @@ export default function ChatView(props: ChatViewProps) {
     isAtEndRef.current = true;
     showScrollDebouncer.current.cancel();
     setShowScrollToBottom(false);
-    if (rightPanelStateOnNextThreadRef.current) {
-      setRightPanelState(rightPanelStateOnNextThreadRef.current);
-      rightPanelStateOnNextThreadRef.current = null;
+    if (planPanelOpenOnNextThreadRef.current !== null) {
+      setPlanPanelOpen(planPanelOpenOnNextThreadRef.current);
+      planPanelOpenOnNextThreadRef.current = null;
     } else {
-      setRightPanelState((current) => ({
-        ...current,
-        open: false,
-        selectedIssueKey: null,
-      }));
+      setPlanPanelOpen(false);
     }
     planSidebarDismissedForTurnRef.current = null;
   }, [activeThread?.id]);
@@ -2298,7 +2304,7 @@ export default function ChatView(props: ChatViewProps) {
       if (command === "diff.toggle") {
         event.preventDefault();
         event.stopPropagation();
-        onToggleDiff();
+        onToggleGit();
         return;
       }
 
@@ -2323,7 +2329,7 @@ export default function ChatView(props: ChatViewProps) {
     runProjectScript,
     splitTerminal,
     keybindings,
-    onToggleDiff,
+    onToggleGit,
     toggleTerminalVisibility,
   ]);
 
@@ -2960,11 +2966,7 @@ export default function ChatView(props: ChatViewProps) {
         // step-tracking activities that the sidebar will display.
         if (nextInteractionMode === "default") {
           planSidebarDismissedForTurnRef.current = null;
-          setRightPanelState((current) => ({
-            ...current,
-            open: true,
-            tab: "plan",
-          }));
+          setPlanPanelOpen(true);
         }
         sendInFlightRef.current = false;
       } catch (err) {
@@ -3083,11 +3085,7 @@ export default function ChatView(props: ChatViewProps) {
         return waitForStartedServerThread(scopeThreadRef(activeThread.environmentId, nextThreadId));
       })
       .then(() => {
-        rightPanelStateOnNextThreadRef.current = {
-          open: true,
-          tab: "plan",
-          selectedIssueKey: null,
-        };
+        planPanelOpenOnNextThreadRef.current = true;
         return navigate({
           to: "/$environmentId/$threadId",
           params: {
@@ -3126,72 +3124,21 @@ export default function ChatView(props: ChatViewProps) {
     runtimeMode,
     environmentId,
   ]);
-  const onStartWorkWithJiraIssue = useCallback(
-    async (issue: JiraIssueDetail) => {
+  const onRunJiraWorkAction = useCallback(
+    async (issue: JiraIssueDetail, action: JiraWorkActionOption) => {
       const api = readEnvironmentApi(environmentId);
       if (!api || !activeProject || !activeThread) {
         return;
       }
-      if (!isGitRepo) {
-        toastManager.add({
-          type: "error",
-          title: "Start Work is unavailable",
-          description: "This project must be backed by git before Codex can start Jira work.",
-        });
-        return;
-      }
-
-      const fallbackBranch = gitStatusQuery.data?.branch ?? null;
-      let baseBranch = fallbackBranch;
-      try {
-        const branchResult = await api.git.listBranches({
-          cwd: activeProject.cwd,
-          limit: 100,
-        });
-        baseBranch = resolveBaseBranchForJiraStartWork(branchResult.branches, fallbackBranch);
-      } catch {
-        baseBranch = fallbackBranch;
-      }
-
-      if (!baseBranch) {
-        toastManager.add({
-          type: "error",
-          title: "Base branch unavailable",
-          description: "Could not determine a base branch for the Jira worktree.",
-        });
-        return;
-      }
-
-      const branchName = buildJiraWorktreeBranchName(issue.key, issue.summary);
       const createdAt = new Date().toISOString();
+      const nextThreadTitle = truncate(`${issue.key} ${issue.summary}`);
 
-      try {
-        const worktree = await api.git.createWorktree({
-          cwd: activeProject.cwd,
-          branch: baseBranch,
-          newBranch: branchName,
-          path: null,
-        });
-
-        try {
-          await api.jira.runAutomation({
-            cwd: activeProject.cwd,
-            issueKey: issue.key,
-            automation: "on_branch_created",
-          });
-        } catch (error) {
-          toastManager.add({
-            type: "warning",
-            title: "Jira automation warning",
-            description:
-              error instanceof Error
-                ? error.message
-                : "The Jira branch-created automation did not complete.",
-          });
-        }
-
+      const createJiraThread = async (input: {
+        branch: string | null;
+        worktreePath: string | null;
+        prompt: string;
+      }) => {
         const nextThreadId = newThreadId();
-        const nextThreadTitle = truncate(`${issue.key} ${issue.summary}`);
         await api.orchestration.dispatchCommand({
           type: "thread.create",
           commandId: newCommandId(),
@@ -3201,8 +3148,8 @@ export default function ChatView(props: ChatViewProps) {
           modelSelection: activeThread.modelSelection,
           runtimeMode: activeThread.runtimeMode,
           interactionMode: activeThread.interactionMode,
-          branch: worktree.worktree.branch,
-          worktreePath: worktree.worktree.path,
+          branch: input.branch,
+          worktreePath: input.worktreePath,
           createdAt,
         });
         await api.orchestration.dispatchCommand({
@@ -3212,7 +3159,7 @@ export default function ChatView(props: ChatViewProps) {
           message: {
             messageId: newMessageId(),
             role: "user",
-            text: buildJiraStartWorkPrompt(issue),
+            text: input.prompt,
             attachments: [],
           },
           modelSelection: activeThread.modelSelection,
@@ -3222,13 +3169,9 @@ export default function ChatView(props: ChatViewProps) {
           createdAt,
         });
         await waitForStartedServerThread(scopeThreadRef(environmentId, nextThreadId));
-        rightPanelStateOnNextThreadRef.current = {
-          open: true,
-          tab: "jira",
-          selectedIssueKey: issue.key,
-        };
-        // Post-creation cleanup: failures here should not surface as "Could not start Jira work"
-        // since the worktree, thread, and first turn were already created successfully.
+        useJiraToolsStore.getState().setJiraOpen(true);
+        useJiraToolsStore.getState().setSelectedIssueKey(issue.key);
+        useJiraToolsStore.getState().setToolsTab("jira");
         void invalidateJiraQueries(queryClient, {
           environmentId,
           cwd: activeProject.cwd,
@@ -3240,10 +3183,155 @@ export default function ChatView(props: ChatViewProps) {
             threadId: nextThreadId,
           },
         }).catch(() => {});
+      };
+
+      const resolveBranchWorkspace = async (branchName: string) => {
+        const branchResult = await api.git.listBranches({
+          cwd: activeProject.cwd,
+          limit: 100,
+        });
+        const branch = branchResult.branches.find(
+          (candidate) => !candidate.isRemote && candidate.name === branchName,
+        );
+        if (!branch) {
+          throw new Error(`Could not find local branch ${branchName}.`);
+        }
+        if (branch.current) {
+          return { branch: branch.name, worktreePath: null as string | null };
+        }
+        if (branch.worktreePath) {
+          return { branch: branch.name, worktreePath: branch.worktreePath };
+        }
+        const worktree = await api.git.createWorktree({
+          cwd: activeProject.cwd,
+          branch: branch.name,
+          path: null,
+        });
+        return {
+          branch: worktree.worktree.branch,
+          worktreePath: worktree.worktree.path,
+        };
+      };
+
+      try {
+        if (!isGitRepo && action.kind !== "start_review") {
+          toastManager.add({
+            type: "error",
+            title: "Work action is unavailable",
+            description: "This project must be backed by git before Codex can start Jira work.",
+          });
+          return;
+        }
+
+        if (action.kind === "start_work") {
+          const fallbackBranch = gitStatusQuery.data?.branch ?? null;
+          let baseBranch = fallbackBranch;
+          try {
+            const branchResult = await api.git.listBranches({
+              cwd: activeProject.cwd,
+              limit: 100,
+            });
+            baseBranch = resolveBaseBranchForJiraStartWork(branchResult.branches, fallbackBranch);
+          } catch {
+            baseBranch = fallbackBranch;
+          }
+
+          if (!baseBranch) {
+            toastManager.add({
+              type: "error",
+              title: "Base branch unavailable",
+              description: "Could not determine a base branch for the Jira worktree.",
+            });
+            return;
+          }
+
+          const branchName = buildJiraWorktreeBranchName(issue.key, issue.summary);
+          const worktree = await api.git.createWorktree({
+            cwd: activeProject.cwd,
+            branch: baseBranch,
+            newBranch: branchName,
+            path: null,
+          });
+
+          try {
+            await api.jira.runAutomation({
+              cwd: activeProject.cwd,
+              issueKey: issue.key,
+              automation: "on_branch_created",
+            });
+          } catch (error) {
+            toastManager.add({
+              type: "warning",
+              title: "Jira automation warning",
+              description:
+                error instanceof Error
+                  ? error.message
+                  : "The Jira branch-created automation did not complete.",
+            });
+          }
+
+          await createJiraThread({
+            branch: worktree.worktree.branch,
+            worktreePath: worktree.worktree.path,
+            prompt: buildJiraStartWorkPrompt(issue),
+          });
+          return;
+        }
+
+        if (action.kind === "continue_work") {
+          if (!action.branchName) {
+            throw new Error("Continue Work requires a target branch.");
+          }
+          const workspace = await resolveBranchWorkspace(action.branchName);
+          await createJiraThread({
+            branch: workspace.branch,
+            worktreePath: workspace.worktreePath,
+            prompt: buildJiraContinueWorkPrompt({
+              key: issue.key,
+              summary: issue.summary,
+              descriptionMarkdown: issue.descriptionMarkdown,
+              branchName: workspace.branch,
+              pullRequest: action.pullRequest
+                ? {
+                    number: action.pullRequest.number,
+                    title: action.pullRequest.title,
+                    url: action.pullRequest.url,
+                  }
+                : null,
+            }),
+          });
+          return;
+        }
+
+        const reviewBranch =
+          action.branchName ?? activeThread.branch ?? gitStatusQuery.data?.branch ?? null;
+        const reviewWorkspace = action.branchName
+          ? await resolveBranchWorkspace(action.branchName)
+          : {
+              branch: reviewBranch,
+              worktreePath: activeThread.worktreePath ?? null,
+            };
+        await createJiraThread({
+          branch: reviewWorkspace.branch,
+          worktreePath: reviewWorkspace.worktreePath,
+          prompt: buildJiraStartReviewPrompt({
+            key: issue.key,
+            summary: issue.summary,
+            descriptionMarkdown: issue.descriptionMarkdown,
+            branchName: reviewBranch,
+            pullRequest: action.pullRequest
+              ? {
+                  number: action.pullRequest.number,
+                  title: action.pullRequest.title,
+                  url: action.pullRequest.url,
+                }
+              : null,
+          }),
+        });
       } catch (error) {
         toastManager.add({
           type: "error",
-          title: "Could not start Jira work",
+          title: "Could not start Jira action",
           description:
             error instanceof Error ? error.message : "An error occurred while starting Jira work.",
         });
@@ -3259,6 +3347,26 @@ export default function ChatView(props: ChatViewProps) {
       queryClient,
     ],
   );
+
+  // Publish ChatView state to the jira tools store so the route-level Tools panel
+  // can render the Jira tab with the correct context.
+  useEffect(() => {
+    useJiraToolsStore.getState().publishChatViewState({
+      jiraCwd: activeProject?.cwd ?? allProjects[0]?.cwd ?? null,
+      currentBranch: activeThread?.branch ?? gitStatusQuery.data?.branch ?? null,
+      hasGitRepo: isGitRepo,
+      isWorking,
+      runJiraActionHandler: onRunJiraWorkAction,
+    });
+  }, [
+    activeProject?.cwd,
+    activeThread?.branch,
+    allProjects,
+    gitStatusQuery.data?.branch,
+    isGitRepo,
+    isWorking,
+    onRunJiraWorkAction,
+  ]);
 
   const onProviderModelSelect = useCallback(
     (provider: ProviderKind, model: string) => {
@@ -3406,7 +3514,7 @@ export default function ChatView(props: ChatViewProps) {
           onUpdateProjectScript={updateProjectScript}
           onDeleteProjectScript={deleteProjectScript}
           onToggleTerminal={toggleTerminalVisibility}
-          onToggleDiff={onToggleDiff}
+          onToggleGit={onToggleGit}
           onToggleJira={toggleJiraPanel}
         />
       </header>
@@ -3578,35 +3686,24 @@ export default function ChatView(props: ChatViewProps) {
         </div>
         {/* end chat column */}
 
-        {rightPanelState.open ? (
+        {planSidebarOpen ? (
           <RightPanel
-            tab={rightPanelState.tab}
-            onTabChange={(tab) =>
-              setRightPanelState((current) => ({
-                ...current,
-                open: true,
-                tab,
-              }))
-            }
-            onClose={closeRightPanel}
+            tab="plan"
+            onTabChange={() => {}}
+            onClose={closePlanPanel}
             environmentId={environmentId}
             markdownCwd={gitCwd ?? undefined}
             workspaceRoot={activeWorkspaceRoot}
             timestampFormat={timestampFormat}
             activePlan={activePlan}
             activeProposedPlan={sidebarProposedPlan}
-            jiraCwd={activeProject?.cwd ?? null}
-            selectedIssueKey={rightPanelState.selectedIssueKey}
-            onSelectIssueKey={(issueKey) =>
-              setRightPanelState((current) => ({
-                ...current,
-                selectedIssueKey: issueKey,
-              }))
-            }
-            onStartWork={onStartWorkWithJiraIssue}
-            currentBranch={activeThread.branch ?? gitStatusQuery.data?.branch ?? null}
-            hasGitRepo={isGitRepo}
-            isWorking={isWorking}
+            jiraCwd={null}
+            selectedIssueKey={null}
+            onSelectIssueKey={() => {}}
+            onRunAction={() => {}}
+            currentBranch={null}
+            hasGitRepo={false}
+            isWorking={false}
           />
         ) : null}
       </div>

@@ -41,6 +41,19 @@ export function buildJiraStartWorkPrompt(input: {
   summary: string;
   descriptionMarkdown: string;
 }): string {
+  const ticketContext = buildJiraTicketPromptContext(input);
+  return [
+    ...ticketContext,
+    "",
+    "Please stay scoped to this ticket and call out any missing or ambiguous requirements before implementation.",
+  ].join("\n");
+}
+
+function buildJiraTicketPromptContext(input: {
+  key: string;
+  summary: string;
+  descriptionMarkdown: string;
+}): string[] {
   const description = input.descriptionMarkdown.trim();
   return [
     `Jira key: ${input.key}`,
@@ -48,8 +61,70 @@ export function buildJiraStartWorkPrompt(input: {
     "",
     "Description:",
     description.length > 0 ? description : "_No Jira description provided._",
+  ];
+}
+
+export function buildJiraContinueWorkPrompt(input: {
+  key: string;
+  summary: string;
+  descriptionMarkdown: string;
+  branchName: string;
+  pullRequest: {
+    number: number;
+    title: string;
+    url: string;
+  } | null;
+}): string {
+  const pullRequestContext = input.pullRequest
+    ? [
+        `Pull request: #${input.pullRequest.number} ${input.pullRequest.title}`,
+        `Pull request URL: ${input.pullRequest.url}`,
+      ]
+    : ["Pull request: _No open pull request detected._"];
+
+  return [
+    ...buildJiraTicketPromptContext(input),
     "",
-    "Please stay scoped to this ticket and call out any missing or ambiguous requirements before implementation.",
+    `Current branch: ${input.branchName}`,
+    ...pullRequestContext,
+    "",
+    "Inspect the current branch, code, and pull request context first, then summarize the current implementation state before making changes.",
+    "Continue the work from that state, and ask me what to tackle next if the next step is unclear.",
+  ].join("\n");
+}
+
+export function buildJiraStartReviewPrompt(input: {
+  key: string;
+  summary: string;
+  descriptionMarkdown: string;
+  branchName: string | null;
+  pullRequest: {
+    number: number;
+    title: string;
+    url: string;
+  } | null;
+}): string {
+  const branchContext = input.branchName
+    ? [`Relevant branch: ${input.branchName}`]
+    : ["Relevant branch: _Resolve from the relevant pull request if needed._"];
+  const pullRequestContext = input.pullRequest
+    ? [
+        `Pull request: #${input.pullRequest.number} ${input.pullRequest.title}`,
+        `Pull request URL: ${input.pullRequest.url}`,
+      ]
+    : [
+        "If pull request context is missing, resolve the relevant pull request from GitHub before reviewing.",
+      ];
+
+  return [
+    ...buildJiraTicketPromptContext(input),
+    "",
+    ...branchContext,
+    ...pullRequestContext,
+    "",
+    "Please perform a PR/code review for this ticket.",
+    "Focus on bugs, regressions, missing tests, and risks.",
+    "Do not start implementing fixes unless I ask for changes.",
   ].join("\n");
 }
 

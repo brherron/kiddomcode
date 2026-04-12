@@ -9,6 +9,7 @@ apps/*/dist
 packages/*/dist
 .env
 .env.local
+.t3-jira-config.json
 build/
 .logs/
 release/

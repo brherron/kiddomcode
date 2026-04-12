@@ -10,6 +10,7 @@ import { Button } from "../ui/button";
 import { cn } from "../../lib/utils";
 import { JiraPanelTab } from "./JiraPanelTab";
 import { PlanPanelTab } from "./PlanPanelTab";
+import type { JiraWorkActionOption } from "../../lib/jiraWorkActions";
 
 interface RightPanelProps {
   tab: "plan" | "jira";
@@ -24,7 +25,7 @@ interface RightPanelProps {
   jiraCwd: string | null;
   selectedIssueKey: string | null;
   onSelectIssueKey: (issueKey: string) => void;
-  onStartWork: (issue: JiraIssueDetail) => void | Promise<void>;
+  onRunAction: (issue: JiraIssueDetail, action: JiraWorkActionOption) => void | Promise<void>;
   currentBranch: string | null;
   hasGitRepo: boolean;
   isWorking: boolean;
@@ -63,8 +64,8 @@ export const RightPanel = memo(function RightPanel(props: RightPanelProps) {
         </Button>
       </div>
 
-      <ScrollArea className="min-h-0 flex-1">
-        {props.tab === "plan" ? (
+      {props.tab === "plan" ? (
+        <ScrollArea className="min-h-0 flex-1">
           <PlanPanelTab
             activePlan={props.activePlan}
             activeProposedPlan={props.activeProposedPlan}
@@ -73,19 +74,19 @@ export const RightPanel = memo(function RightPanel(props: RightPanelProps) {
             workspaceRoot={props.workspaceRoot}
             timestampFormat={props.timestampFormat}
           />
-        ) : (
-          <JiraPanelTab
-            environmentId={props.environmentId}
-            cwd={props.jiraCwd}
-            selectedIssueKey={props.selectedIssueKey}
-            onSelectIssueKey={props.onSelectIssueKey}
-            onStartWork={props.onStartWork}
-            currentBranch={props.currentBranch}
-            hasGitRepo={props.hasGitRepo}
-            isWorking={props.isWorking}
-          />
-        )}
-      </ScrollArea>
+        </ScrollArea>
+      ) : (
+        <JiraPanelTab
+          environmentId={props.environmentId}
+          cwd={props.jiraCwd}
+          selectedIssueKey={props.selectedIssueKey}
+          onSelectIssueKey={props.onSelectIssueKey}
+          onRunAction={props.onRunAction}
+          currentBranch={props.currentBranch}
+          hasGitRepo={props.hasGitRepo}
+          isWorking={props.isWorking}
+        />
+      )}
     </div>
   );
 });

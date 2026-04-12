@@ -16,8 +16,7 @@ import { adfToMarkdown } from "../adfToMarkdown.ts";
 import { JiraConfig } from "../Services/JiraConfig.ts";
 import { JiraService } from "../Services/JiraService.ts";
 
-const ACTIVE_TASK_JQL =
-  "assignee = currentUser() AND sprint in openSprints() AND status != Done ORDER BY updated DESC";
+const ACTIVE_TASK_JQL = "assignee = currentUser() AND status != Done ORDER BY updated DESC";
 const ACTIVE_TASK_MAX_RESULTS = 25;
 const RECENT_COMMENT_LIMIT = 10;
 
@@ -174,14 +173,18 @@ export const makeJiraService = (options?: {
         getConfigStatus: (cwd: string) => jiraConfig.getConfigStatus(cwd),
         listActiveTasks: (cwd: string) =>
           Effect.gen(function* () {
-            const searchUrl = new URL("/rest/api/3/search", "https://jira.local");
-            searchUrl.searchParams.set("jql", ACTIVE_TASK_JQL);
-            searchUrl.searchParams.set("fields", "summary,status");
-            searchUrl.searchParams.set("maxResults", String(ACTIVE_TASK_MAX_RESULTS));
             const { payload } = yield* request(
               cwd,
-              searchUrl.pathname + searchUrl.search,
+              "/rest/api/3/search/jql",
               "jira.listActiveTasks",
+              {
+                method: "POST",
+                body: {
+                  jql: ACTIVE_TASK_JQL,
+                  fields: ["summary", "status"],
+                  maxResults: ACTIVE_TASK_MAX_RESULTS,
+                },
+              },
             );
             return yield* Effect.try({
               try: () => decodeSearchResponse(payload),

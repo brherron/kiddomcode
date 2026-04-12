@@ -1,6 +1,6 @@
 import { Schema } from "effect";
 
-import { IsoDateTime, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
+import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
 
 export const JiraAutomationKind = Schema.Literals(["on_branch_created", "on_pr_opened"]);
 export type JiraAutomationKind = typeof JiraAutomationKind.Type;
@@ -14,25 +14,25 @@ export type JiraConfigStatusResult = typeof JiraConfigStatusResult.Type;
 
 export const JiraIssueSummary = Schema.Struct({
   key: TrimmedNonEmptyString,
-  summary: TrimmedNonEmptyString,
-  statusName: TrimmedNonEmptyString,
-  statusCategoryName: Schema.optional(TrimmedNonEmptyString),
+  summary: Schema.String,
+  statusName: Schema.String,
+  statusCategoryName: Schema.optional(Schema.String),
 });
 export type JiraIssueSummary = typeof JiraIssueSummary.Type;
 
 export const JiraIssueComment = Schema.Struct({
   id: TrimmedNonEmptyString,
-  authorDisplayName: TrimmedNonEmptyString,
+  authorDisplayName: Schema.String,
   bodyMarkdown: Schema.String,
-  createdAt: IsoDateTime,
+  createdAt: Schema.String,
 });
 export type JiraIssueComment = typeof JiraIssueComment.Type;
 
 export const JiraIssueDetail = Schema.Struct({
   key: TrimmedNonEmptyString,
-  summary: TrimmedNonEmptyString,
-  statusName: TrimmedNonEmptyString,
-  statusCategoryName: Schema.optional(TrimmedNonEmptyString),
+  summary: Schema.String,
+  statusName: Schema.String,
+  statusCategoryName: Schema.optional(Schema.String),
   descriptionMarkdown: Schema.String,
   comments: Schema.Array(JiraIssueComment),
   url: Schema.String,
