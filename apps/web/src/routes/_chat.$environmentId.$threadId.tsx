@@ -19,7 +19,7 @@ import {
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useJiraToolsStore } from "../jiraToolsStore";
-import { selectEnvironmentState, selectThreadByRef, useStore } from "../store";
+import { selectEnvironmentState, selectThreadByRef, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import {
   closeToolsPanel,
@@ -253,6 +253,8 @@ function ChatThreadRouteView() {
       ),
     );
   }, [applyToolsPanelState, diffOpen, jiraOpen, toolsTab]);
+
+  const markDiffOpened = useCallback(() => setHasOpenedDiff(true), []);
 
   // When diff opens via URL, switch to git tab
   useEffect(() => {

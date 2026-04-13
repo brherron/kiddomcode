@@ -83,5 +83,8 @@
   },
   "trustedDependencies": [
     "node-pty"
-  ]
+  ],
+  "dependencies": {
+    "@legendapp/list": "^2.0.19"
+  }
 }
