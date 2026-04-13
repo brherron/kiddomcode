@@ -404,7 +404,7 @@ describe("JiraPanelTab", () => {
     const cases = [
       ["Bug", "bg-red-500/12"],
       ["Task", "bg-blue-500/12"],
-      ["Story", "bg-green-500/12"],
+      ["Story", "bg-lime-500/12"],
       ["Epic", "bg-purple-500/12"],
     ] as const;
 

@@ -27,7 +27,7 @@ interface JiraToolsState {
 interface JiraToolsActions {
   setToolsTab: (tab: ToolsTab) => void;
   setJiraOpen: (open: boolean) => void;
-  setSelectedIssueKey: (key: string) => void;
+  setSelectedIssueKey: (key: string | null) => void;
   /** ChatView calls this on every render to push its state into the store. */
   publishChatViewState: (state: {
     jiraCwd: string | null;

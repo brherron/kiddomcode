@@ -23,9 +23,9 @@ const MediumIcon = () => (
     viewBox="0 -3 24 24"
     fill="none"
     stroke="currentColor"
-    stroke-width="2"
-    stroke-linecap="round"
-    stroke-linejoin="round"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
     className="lucide lucide-menu-icon lucide-menu"
   >
     <path d="M4 5h16" />
@@ -113,7 +113,8 @@ export function IssueTypeMark(props: { issueTypeName: string; size?: string }) {
         props.size === "small" ? "size-3" : "",
       )}
     >
-      <Icon className="size-4" />
+      <Icon className={
+        props.size === "small" ? "" : "size-5"} />
     </div>
   );
 }
@@ -222,11 +223,12 @@ function CommentCard(props: { comment: JiraIssueComment; featured?: boolean; cwd
         <span className="font-medium text-foreground">{props.comment.authorDisplayName}</span>
         <span>{new Date(props.comment.createdAt).toLocaleString()}</span>
       </div>
-      <div className="text-xs leading-6">
+      <div className="leading-6">
         <ChatMarkdown
           text={props.comment.bodyMarkdown}
           cwd={props.cwd ?? undefined}
           isStreaming={false}
+          className="text-xs"
         />
       </div>
     </div>
@@ -248,7 +250,6 @@ export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
   const sortedComments = sortCommentsNewestFirst(comments);
   const latestComment = sortedComments[0] ?? null;
   const previousComments = latestComment ? sortedComments.slice(1) : [];
-  console.log(props.issue.relatedIssues);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -258,7 +259,7 @@ export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
             <div className="w-full flex items-center gap-2">
               <IssueTypeMark issueTypeName={props.issue.issueTypeName} />
               <p className="text-l text-white/30 uppercase">{props.issue.key}</p>
-              <a href={props.issue.url} target="blank" className="p-0.75 rounded hover:bg-white/5"><ExternalLink className="size-4 text-white/30" /></a>
+              <a href={props.issue.url} target="_blank" className="p-0.75 rounded hover:bg-white/5"><ExternalLink className="size-4 text-white/30" /></a>
               {props.actionSlot ? <div className="shrink-0 ml-auto">{props.actionSlot}</div> : null}
             </div>
             <h3 className="text-xl font-semibold text-foreground">{props.issue.summary}</h3>
@@ -273,11 +274,12 @@ export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
               Description
             </div>
             {descriptionMarkdown.trim().length > 0 ? (
-              <div className="text-sm leading-6 text-muted-foreground">
+              <div className="leading-6 text-muted-foreground">
                 <ChatMarkdown
                   text={descriptionMarkdown}
                   cwd={props.cwd ?? undefined}
                   isStreaming={false}
+                  className="text-xs"
                 />
               </div>
             ) : (

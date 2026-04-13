@@ -51,15 +51,17 @@ export const JiraSidePanel = memo(function JiraSidePanel(props: JiraSidePanelPro
       startX.current = e.clientX;
       startWidth.current = width;
 
+      let finalWidth = startWidth.current;
+
       const onPointerMove = (ev: PointerEvent) => {
         if (!dragging.current) return;
         // Dragging left edge: moving left = wider
         const delta = startX.current - ev.clientX;
-        const next = Math.min(
+        finalWidth = Math.min(
           JIRA_PANEL_MAX_WIDTH,
           Math.max(JIRA_PANEL_MIN_WIDTH, startWidth.current + delta),
         );
-        setWidth(next);
+        setWidth(finalWidth);
       };
 
       const onPointerUp = () => {
@@ -68,7 +70,7 @@ export const JiraSidePanel = memo(function JiraSidePanel(props: JiraSidePanelPro
         document.removeEventListener("pointerup", onPointerUp);
         // Persist
         try {
-          localStorage.setItem(JIRA_PANEL_WIDTH_STORAGE_KEY, String(width));
+          localStorage.setItem(JIRA_PANEL_WIDTH_STORAGE_KEY, String(finalWidth));
         } catch {
           // ignore
         }

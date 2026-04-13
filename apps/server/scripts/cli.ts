@@ -144,7 +144,7 @@ const buildCmd = Command.make(
       const fs = yield* FileSystem.FileSystem;
       const repoRoot = yield* RepoRoot;
       const serverDir = path.join(repoRoot, "apps/server");
-      const bunExecutable = process.env.npm_execpath ?? process.execPath;
+      const bunExecutable = process.execPath;
 
       yield* Effect.log("[cli] Running tsdown...");
       yield* runCommand(

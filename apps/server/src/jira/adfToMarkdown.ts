@@ -11,8 +11,13 @@ interface AdfNode {
   readonly content?: ReadonlyArray<AdfNode>;
 }
 
-function escapeInlineCode(text: string): string {
-  return text.replace(/`/g, "\\`");
+function wrapInlineCode(text: string): string {
+  // CommonMark: use N+1 backticks as delimiter when content contains runs of backticks
+  const maxRun = Math.max(0, ...([...text.matchAll(/`+/g)].map((m) => m[0].length)));
+  const fence = "`".repeat(maxRun + 1);
+  // Pad with spaces when content starts/ends with a backtick to avoid ambiguity
+  const needsPad = text.startsWith("`") || text.endsWith("`");
+  return needsPad ? `${fence} ${text} ${fence}` : `${fence}${text}${fence}`;
 }
 
 function applyMarks(text: string, marks: ReadonlyArray<AdfMark> | undefined): string {
@@ -29,7 +34,7 @@ function applyMarks(text: string, marks: ReadonlyArray<AdfMark> | undefined): st
       case "strike":
         return `~~${current}~~`;
       case "code":
-        return `\`${escapeInlineCode(current)}\``;
+        return wrapInlineCode(current);
       case "link": {
         const href = typeof mark.attrs?.href === "string" ? mark.attrs.href : null;
         return href ? `[${current}](${href})` : current;

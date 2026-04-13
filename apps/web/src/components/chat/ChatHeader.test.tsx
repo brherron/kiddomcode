@@ -55,7 +55,7 @@ describe("ChatHeader", () => {
       />,
     );
 
-    expect(html).toContain(">Git<");
+    expect(html).toContain('aria-label="Git"');
     expect(html).toContain(">Jira<");
   });
 });
