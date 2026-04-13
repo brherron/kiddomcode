@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
 
 const {
+  queryClientRef,
   branchQueryRef,
   configStatusRef,
   activeTasksRef,
@@ -13,6 +14,11 @@ const {
   startWorkSpy,
   selectIssueSpy,
 } = vi.hoisted(() => ({
+  queryClientRef: {
+    current: {
+      invalidateQueries: vi.fn(() => Promise.resolve()),
+    },
+  },
   branchQueryRef: {
     current: {
       data: {
@@ -62,6 +68,8 @@ const {
           key: "WEB-101",
           summary: "Implement Jira panel",
           statusName: "In Progress",
+          issueTypeName: "Task",
+          storyPoints: 3,
           descriptionMarkdown: "Ship the right panel.",
           comments: [
             {
@@ -72,7 +80,7 @@ const {
             },
           ],
           url: "https://example.atlassian.net/browse/WEB-101",
-        },
+        } as any,
       },
       isPending: false,
       isFetching: false,
@@ -85,22 +93,27 @@ const {
   selectIssueSpy: vi.fn(),
 }));
 
-vi.mock("@tanstack/react-query", () => ({
-  useQuery: vi.fn((options: { queryKey: readonly unknown[] }) => {
-    const key = options.queryKey[1];
-    if (options.queryKey[0] === "git" && key === "branches") {
-      return branchQueryRef.current;
-    }
-    if (key === "config-status") {
-      return configStatusRef.current;
-    }
-    if (key === "active-tasks") {
-      return activeTasksRef.current;
-    }
-    return issueDetailRef.current;
-  }),
-  useQueries: vi.fn(() => pullRequestQueryResultsRef.current),
-}));
+vi.mock("@tanstack/react-query", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@tanstack/react-query")>();
+  return {
+    ...actual,
+    useQuery: vi.fn((options: { queryKey: readonly unknown[] }) => {
+      const key = options.queryKey[1];
+      if (options.queryKey[0] === "git" && key === "branches") {
+        return branchQueryRef.current;
+      }
+      if (key === "config-status") {
+        return configStatusRef.current;
+      }
+      if (key === "active-tasks") {
+        return activeTasksRef.current;
+      }
+      return issueDetailRef.current;
+    }),
+    useQueries: vi.fn(() => pullRequestQueryResultsRef.current),
+    useQueryClient: vi.fn(() => queryClientRef.current),
+  };
+});
 
 vi.mock("../ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => <div>{text}</div>,
@@ -149,6 +162,8 @@ describe("JiraPanelTab", () => {
           key: "WEB-101",
           summary: "Implement Jira panel",
           statusName: "In Progress",
+          issueTypeName: "Task",
+          storyPoints: 3,
           descriptionMarkdown: "Ship the right panel.",
           comments: [
             {
@@ -159,7 +174,7 @@ describe("JiraPanelTab", () => {
             },
           ],
           url: "https://example.atlassian.net/browse/WEB-101",
-        },
+        } as any,
       },
       isPending: false,
       isFetching: false,
@@ -215,6 +230,35 @@ describe("JiraPanelTab", () => {
       await expect.element(page.getByText("Implement Jira panel")).toBeInTheDocument();
       await expect.element(page.getByText("Ship the right panel.")).toBeInTheDocument();
       await expect.element(page.getByText("Looks good.")).toBeInTheDocument();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("refreshes Jira queries when the refresh button is clicked", async () => {
+    const screen = await render(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey="WEB-101"
+        onSelectIssueKey={selectIssueSpy}
+        onRunAction={startWorkSpy}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    try {
+      const refreshButton = page.getByRole("button", { name: "Refresh Jira tasks" });
+      await expect.element(refreshButton).toBeInTheDocument();
+
+      await refreshButton.click();
+
+      expect(queryClientRef.current.invalidateQueries).toHaveBeenCalledTimes(1);
+      expect(queryClientRef.current.invalidateQueries).toHaveBeenCalledWith({
+        queryKey: ["jira"],
+      });
     } finally {
       await screen.unmount();
     }
@@ -303,10 +347,12 @@ describe("JiraPanelTab", () => {
           key: "WEB-101",
           summary: "Implement Jira panel",
           statusName: "Code Review",
+          issueTypeName: "Task",
+          storyPoints: 3,
           descriptionMarkdown: "Ship the right panel.",
           comments: [],
           url: "https://example.atlassian.net/browse/WEB-101",
-        },
+        } as any,
       },
       isPending: false,
       isFetching: false,
@@ -327,6 +373,57 @@ describe("JiraPanelTab", () => {
 
     try {
       await expect.element(page.getByRole("button", { name: "Start Review" })).toBeInTheDocument();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("shows the issue priority, flag, and parent metadata in the detail view", async () => {
+    issueDetailRef.current = {
+      data: {
+        issue: {
+          key: "WEB-101",
+          summary: "Implement Jira panel",
+          statusName: "In Progress",
+          issueTypeName: "Task",
+          storyPoints: 3,
+          descriptionMarkdown: "Ship the right panel.",
+          priorityName: "Low",
+          isFlagged: true,
+          parentKey: "WEB-100",
+          parentSummary: "Parent ticket",
+          comments: [
+            {
+              id: "10001",
+              authorDisplayName: "Reviewer One",
+              bodyMarkdown: "Looks good.",
+              createdAt: "2026-04-10T16:00:00.000Z",
+            },
+          ],
+          url: "https://example.atlassian.net/browse/WEB-101",
+        } as any,
+      },
+      isPending: false,
+      isFetching: false,
+    };
+
+    const screen = await render(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey="WEB-101"
+        onSelectIssueKey={selectIssueSpy}
+        onRunAction={startWorkSpy}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    try {
+      await expect.element(page.getByText("Low")).toBeInTheDocument();
+      await expect.element(page.getByText("Flagged")).toBeInTheDocument();
+      await expect.element(page.getByText("Parent ticket")).toBeInTheDocument();
     } finally {
       await screen.unmount();
     }

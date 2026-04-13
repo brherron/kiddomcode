@@ -4,13 +4,14 @@ import type {
   JiraIssueDetail,
   JiraIssueSummary,
 } from "@t3tools/contracts";
-import { useQueries, useQuery } from "@tanstack/react-query";
+import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircleIcon, ArrowUpDownIcon, ChevronDownIcon } from "lucide-react";
+import { AlertCircleIcon, ArrowUpDownIcon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 
 import { ensureEnvironmentApi } from "../../environmentApi";
 import { extractJiraIssueKey } from "../../lib/jira";
 import {
+  jiraQueryKeys,
   jiraActiveTasksQueryOptions,
   jiraConfigStatusQueryOptions,
   jiraIssueDetailQueryOptions,
@@ -27,6 +28,7 @@ import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Spinner } from "../ui/spinner";
 import { cn } from "../../lib/utils";
+import { BookOpenIcon, BugIcon, ListTodoIcon, SparklesIcon } from "lucide-react";
 
 // ── Status color mapping ──
 
@@ -135,6 +137,73 @@ function StatusChip(props: {
   );
 }
 
+function PriorityChip(props: { priorityName: "High" | "Low" }) {
+  const variant = props.priorityName === "High" ? "destructive" : "outline";
+
+  return (
+    <Badge variant={variant} size="sm" className="px-1.5 text-[9px] font-semibold uppercase">
+      {props.priorityName}
+    </Badge>
+  );
+}
+
+function isVisiblePriorityName(priorityName: string | undefined): priorityName is "High" | "Low" {
+  return priorityName === "High" || priorityName === "Low";
+}
+
+function IssueTypeChip(props: { issueTypeName: string }) {
+  const normalizedIssueType = props.issueTypeName.trim().toLowerCase();
+  const chipConfig = {
+    bug: {
+      className: "border-red-500/20 bg-red-500/12 text-red-600",
+      icon: BugIcon,
+    },
+    task: {
+      className: "border-blue-500/20 bg-blue-500/12 text-blue-600",
+      icon: ListTodoIcon,
+    },
+    story: {
+      className: "border-green-500/20 bg-green-500/12 text-green-600",
+      icon: BookOpenIcon,
+    },
+    epic: {
+      className: "border-pink-500/20 bg-pink-500/12 text-pink-600",
+      icon: SparklesIcon,
+    },
+  }[normalizedIssueType];
+
+  const Icon = chipConfig?.icon ?? ListTodoIcon;
+  const className =
+    chipConfig?.className ?? "border-border/70 bg-muted/20 text-muted-foreground";
+
+  return (
+    <Badge
+      variant="outline"
+      size="sm"
+      className={cn("px-1.5 text-[9px] font-semibold uppercase", className)}
+    >
+      <Icon className="size-3" />
+      {props.issueTypeName}
+    </Badge>
+  );
+}
+
+function StoryPointsChip(props: { storyPoints: number }) {
+  return (
+    <Badge variant="outline" size="sm" className="px-1.5 text-[9px] font-semibold uppercase">
+      {props.storyPoints} pts
+    </Badge>
+  );
+}
+
+function FlagChip() {
+  return (
+    <Badge variant="warning" size="sm" className="px-1.5 text-[9px] font-semibold uppercase">
+      Flagged
+    </Badge>
+  );
+}
+
 function isActionDisabled(input: {
   action: JiraWorkActionOption;
   hasGitRepo: boolean;
@@ -185,6 +254,7 @@ export const JiraPanelTab = memo(function JiraPanelTab({
   isWorking,
 }: JiraPanelTabProps) {
   const [sort, setSort] = useState<SortOption>("status");
+  const queryClient = useQueryClient();
 
   const cycleSort = useCallback(() => {
     setSort((current) => {
@@ -411,15 +481,30 @@ export const JiraPanelTab = memo(function JiraPanelTab({
                   <Spinner className="size-2.5 text-muted-foreground/60" />
                 ) : null}
               </div>
-              <button
-                type="button"
-                onClick={cycleSort}
-                className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] text-muted-foreground hover:bg-muted/40 hover:text-foreground transition-colors"
-                title={`Sort: ${SORT_LABELS[sort]}`}
-              >
-                <ArrowUpDownIcon className="size-2.5" />
-                <span>{SORT_LABELS[sort]}</span>
-              </button>
+              <div className="flex items-center gap-0.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() =>
+                    void queryClient.invalidateQueries({ queryKey: jiraQueryKeys.all })
+                  }
+                  aria-label="Refresh Jira tasks"
+                  title="Refresh Jira tasks"
+                  className="text-muted-foreground/70 hover:text-foreground"
+                >
+                  <RefreshCwIcon className="size-3" />
+                </Button>
+                <button
+                  type="button"
+                  onClick={cycleSort}
+                  className="flex items-center gap-1 rounded px-1 py-0.5 text-[9px] text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+                  title={`Sort: ${SORT_LABELS[sort]}`}
+                >
+                  <ArrowUpDownIcon className="size-2.5" />
+                  <span>{SORT_LABELS[sort]}</span>
+                </button>
+              </div>
             </div>
 
             {activeTasksQuery.isPending ? (
@@ -462,16 +547,18 @@ export const JiraPanelTab = memo(function JiraPanelTab({
 
       {/* ── Detail pane (fixed 66vh) ── */}
       <div className="flex h-[66vh] shrink-0 flex-col border-t border-border/60">
-        <div className="flex shrink-0 items-center justify-between px-3 py-2">
-          <div className="flex items-center gap-2 min-w-0">
+        <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2">
+          <div className="min-w-0 space-y-1">
             {currentIssue ? (
               <>
-                <span className="text-[14px] text-muted-foreground">{currentIssue.key}</span>
-                <StatusChip
-                  size="large"
-                  statusName={currentIssue.statusName}
-                  statusCategoryName={currentIssue.statusCategoryName}
-                />
+                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                  <span className="text-[14px] text-muted-foreground">{currentIssue.key}</span>
+                  <StatusChip
+                    size="large"
+                    statusName={currentIssue.statusName}
+                    statusCategoryName={currentIssue.statusCategoryName}
+                  />
+                </div>
               </>
             ) : (
               <span className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase">
@@ -560,6 +647,25 @@ export const JiraPanelTab = memo(function JiraPanelTab({
             ) : currentIssue ? (
               <div className="space-y-3">
                 <h3 className="text-l font-bold text-foreground">{currentIssue.summary}</h3>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <IssueTypeChip issueTypeName={currentIssue.issueTypeName} />
+                  {typeof currentIssue.storyPoints === "number" ? (
+                    <StoryPointsChip storyPoints={currentIssue.storyPoints} />
+                  ) : null}
+                  {isVisiblePriorityName(currentIssue.priorityName) ? (
+                    <PriorityChip priorityName={currentIssue.priorityName} />
+                  ) : null}
+                  {currentIssue.isFlagged ? <FlagChip /> : null}
+                  {currentIssue.parentSummary ? (
+                    <Badge
+                      variant="outline"
+                      size="sm"
+                      className="max-w-full truncate px-1.5 text-[9px] font-semibold"
+                    >
+                      {currentIssue.parentSummary}
+                    </Badge>
+                  ) : null}
+                </div>
                 <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase">
                   Description
                 </p>

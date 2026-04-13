@@ -209,7 +209,10 @@ describe("JiraServiceLive", () => {
   it("converts ADF descriptions and comments to markdown when loading issue detail", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
-        const fetchSpy = vi.fn(async () => {
+        const fetchSpy = vi.fn(async (input: string | URL) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          expect(url.searchParams.get("fields")).toBe("*all");
+          expect(url.searchParams.get("expand")).toBe("names");
           return new Response(
             JSON.stringify({
               key: "WEB-101",
@@ -253,6 +256,19 @@ describe("JiraServiceLive", () => {
                     name: "To Do",
                   },
                 },
+                issuetype: {
+                  name: "Story",
+                },
+                priority: {
+                  name: "High",
+                },
+                flagged: true,
+                parent: {
+                  key: "WEB-100",
+                  fields: {
+                    summary: "Parent ticket",
+                  },
+                },
                 comment: {
                   comments: [
                     {
@@ -274,6 +290,10 @@ describe("JiraServiceLive", () => {
                     },
                   ],
                 },
+                customfield_12345: 5,
+              },
+              names: {
+                customfield_12345: "Story Points",
               },
             }),
           );
@@ -289,6 +309,12 @@ describe("JiraServiceLive", () => {
           summary: "Implement Jira panel",
           statusName: "Selected for Development",
           statusCategoryName: "To Do",
+          issueTypeName: "Story",
+          priorityName: "High",
+          isFlagged: true,
+          parentKey: "WEB-100",
+          parentSummary: "Parent ticket",
+          storyPoints: 5,
           url: "https://example.atlassian.net/browse/WEB-101",
         });
         expect(result.issue.descriptionMarkdown).toContain("**Jira**");
@@ -301,6 +327,47 @@ describe("JiraServiceLive", () => {
             createdAt: "2026-04-10T16:00:00.000Z",
           },
         ]);
+      }),
+    );
+  });
+
+  it("omits medium priority from issue detail", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async (input: string | URL) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          expect(url.searchParams.get("fields")).toBe("*all");
+          expect(url.searchParams.get("expand")).toBe("names");
+          return new Response(
+            JSON.stringify({
+              key: "WEB-101",
+              fields: {
+                summary: "Implement Jira panel",
+                description: null,
+                status: {
+                  name: "In Progress",
+                },
+                issuetype: {
+                  name: "Task",
+                },
+                priority: {
+                  name: "Medium",
+                },
+                comment: {
+                  comments: [],
+                },
+                names: {},
+              },
+            }),
+          );
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueDetail("/repo/worktree", "WEB-101");
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result.issue.priorityName).toBeUndefined();
       }),
     );
   });

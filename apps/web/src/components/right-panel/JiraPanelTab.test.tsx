@@ -2,12 +2,18 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const {
+  queryClientRef,
   branchQueryRef,
   configStatusRef,
   activeTasksRef,
   issueDetailRef,
   pullRequestQueryResultsRef,
 } = vi.hoisted(() => ({
+  queryClientRef: {
+    current: {
+      invalidateQueries: vi.fn(() => Promise.resolve()),
+    },
+  },
   branchQueryRef: {
     current: {
       data: {
@@ -57,10 +63,12 @@ const {
           key: "WEB-101",
           summary: "Implement Jira panel",
           statusName: "In Progress",
+          issueTypeName: "Task",
+          storyPoints: 3,
           descriptionMarkdown: "Ship the right panel.",
           comments: [],
           url: "https://example.atlassian.net/browse/WEB-101",
-        },
+        } as any,
       },
       isPending: false,
       isFetching: false,
@@ -88,6 +96,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
       return issueDetailRef.current;
     }),
     useQueries: vi.fn(() => pullRequestQueryResultsRef.current),
+    useQueryClient: vi.fn(() => queryClientRef.current),
   };
 });
 
@@ -128,10 +137,12 @@ describe("JiraPanelTab", () => {
           key: "WEB-101",
           summary: "Implement Jira panel",
           statusName: "In Progress",
+          issueTypeName: "Task",
+          storyPoints: 3,
           descriptionMarkdown: "Ship the right panel.",
           comments: [],
           url: "https://example.atlassian.net/browse/WEB-101",
-        },
+        } as any,
       },
       isPending: false,
       isFetching: false,
@@ -195,10 +206,12 @@ describe("JiraPanelTab", () => {
           key: "WEB-101",
           summary: "Implement Jira panel",
           statusName: "Code Review",
+          issueTypeName: "Task",
+          storyPoints: 3,
           descriptionMarkdown: "Ship the right panel.",
           comments: [],
           url: "https://example.atlassian.net/browse/WEB-101",
-        },
+        } as any,
       },
       isPending: false,
       isFetching: false,
@@ -218,5 +231,106 @@ describe("JiraPanelTab", () => {
     );
 
     expect(html).toContain("Start Review");
+  });
+
+  it("includes a refresh button in the Jira header", () => {
+    const html = renderToStaticMarkup(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey="WEB-101"
+        onSelectIssueKey={vi.fn()}
+        onRunAction={vi.fn()}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Refresh Jira tasks"');
+  });
+
+  it("renders high or low priority, flag, and parent metadata in the issue detail", () => {
+    issueDetailRef.current = {
+      data: {
+        issue: {
+          key: "WEB-101",
+          summary: "Implement Jira panel",
+          statusName: "In Progress",
+          issueTypeName: "Task",
+          storyPoints: 3,
+          descriptionMarkdown: "Ship the right panel.",
+          priorityName: "High",
+          isFlagged: true,
+          parentKey: "WEB-100",
+          parentSummary: "Parent ticket",
+          comments: [],
+          url: "https://example.atlassian.net/browse/WEB-101",
+        } as any,
+      },
+      isPending: false,
+      isFetching: false,
+    };
+
+    const html = renderToStaticMarkup(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey="WEB-101"
+        onSelectIssueKey={vi.fn()}
+        onRunAction={vi.fn()}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    expect(html).toContain("High");
+    expect(html).toContain("Flagged");
+    expect(html).toContain("Parent ticket");
+  });
+
+  it("colors issue type chips by bug task story and epic", () => {
+    const cases = [
+      ["Bug", "bg-red-500/12"],
+      ["Task", "bg-blue-500/12"],
+      ["Story", "bg-green-500/12"],
+      ["Epic", "bg-pink-500/12"],
+    ] as const;
+
+    for (const [issueTypeName, expectedClass] of cases) {
+      issueDetailRef.current = {
+        data: {
+          issue: {
+            key: "WEB-101",
+            summary: "Implement Jira panel",
+            statusName: "In Progress",
+            issueTypeName,
+            storyPoints: 3,
+            descriptionMarkdown: "Ship the right panel.",
+            comments: [],
+            url: "https://example.atlassian.net/browse/WEB-101",
+          } as any,
+        },
+        isPending: false,
+        isFetching: false,
+      };
+
+      const html = renderToStaticMarkup(
+        <JiraPanelTab
+          environmentId={"environment-local" as never}
+          cwd="/repo"
+          selectedIssueKey="WEB-101"
+          onSelectIssueKey={vi.fn()}
+          onRunAction={vi.fn()}
+          currentBranch={null}
+          hasGitRepo
+          isWorking={false}
+        />,
+      );
+
+      expect(html).toContain(issueTypeName);
+      expect(html).toContain(expectedClass);
+    }
   });
 });

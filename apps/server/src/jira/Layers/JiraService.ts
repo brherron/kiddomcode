@@ -51,6 +51,20 @@ function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
           createdAt: String(comment.created),
         }))
     : [];
+  const priorityName =
+    issue.fields.priority?.name === "High" || issue.fields.priority?.name === "Low"
+      ? issue.fields.priority.name
+      : undefined;
+  const parent = issue.fields.parent;
+  const storyPointsFieldId = Object.entries(issue.names ?? {}).find(
+    ([, name]) =>
+      typeof name === "string" &&
+      /story points?|story point estimate/i.test(name.trim()),
+  )?.[0];
+  const storyPointsValue =
+    storyPointsFieldId && typeof issue.fields[storyPointsFieldId] === "number"
+      ? issue.fields[storyPointsFieldId]
+      : undefined;
 
   return {
     key: issue.key,
@@ -59,6 +73,12 @@ function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
     ...(issue.fields.status.statusCategory?.name
       ? { statusCategoryName: issue.fields.status.statusCategory.name }
       : {}),
+    issueTypeName: issue.fields.issuetype?.name ?? "Issue",
+    ...(priorityName ? { priorityName } : {}),
+    isFlagged: Boolean(issue.fields.flagged),
+    ...(parent?.key ? { parentKey: String(parent.key) } : {}),
+    ...(parent?.fields?.summary ? { parentSummary: String(parent.fields.summary) } : {}),
+    ...(typeof storyPointsValue === "number" ? { storyPoints: storyPointsValue } : {}),
     descriptionMarkdown: adfToMarkdown(issue.fields.description),
     comments,
     url: `${baseUrl}/browse/${issue.key}`,
@@ -203,7 +223,11 @@ export const makeJiraService = (options?: {
               `/rest/api/3/issue/${encodeURIComponent(issueKey)}`,
               "https://jira.local",
             );
-            issueUrl.searchParams.set("fields", "summary,description,status,comment");
+            issueUrl.searchParams.set(
+              "fields",
+              "*all",
+            );
+            issueUrl.searchParams.set("expand", "names");
             const { config, payload } = yield* request(
               cwd,
               issueUrl.pathname + issueUrl.search,
