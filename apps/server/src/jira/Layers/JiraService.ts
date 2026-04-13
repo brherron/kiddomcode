@@ -147,6 +147,8 @@ function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
   const labels = Array.isArray(issue.fields.labels)
     ? issue.fields.labels.map((label: unknown) => String(label))
     : [];
+  // Story points field ID varies per Jira instance (e.g. customfield_10016, customfield_10028, etc.)
+  // so we can't hardcode it like ACV_FIELD_ID. Instead, detect by display name from issue.names.
   const storyPointsFieldId = Object.entries(issue.names ?? {}).find(
     ([, name]) =>
       typeof name === "string" && /story points?|story point estimate/i.test(name.trim()),
@@ -243,14 +245,20 @@ export const makeJiraService = (options?: {
         });
 
         if (!response.ok) {
-          let detail = `Jira request failed with status ${response.status}.`;
-          const text = yield* Effect.tryPromise({
+          const detail = `Jira request failed with status ${response.status}.`;
+          // Read body for server-side diagnostics only — don't surface raw Jira
+          // responses to the client (may contain internal paths or auth hints).
+          yield* Effect.tryPromise({
             try: () => response.text(),
             catch: () => "",
-          }).pipe(Effect.orElseSucceed(() => ""));
-          if (text.trim().length > 0) {
-            detail = text.trim();
-          }
+          }).pipe(
+            Effect.orElseSucceed(() => ""),
+            Effect.tap((text) =>
+              text.trim().length > 0
+                ? Effect.log(`[JiraService] ${operation} error body: ${text.trim()}`)
+                : Effect.void,
+            ),
+          );
 
           return yield* new JiraError({
             kind:

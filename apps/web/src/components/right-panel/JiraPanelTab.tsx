@@ -32,6 +32,7 @@ import { IssueTypeMark, JiraIssueDetailPane, StatusChip } from "./JiraIssueDetai
 // ── Sort logic ──
 
 type SortOption = "updated" | "status" | "key";
+const SORT_OPTIONS: SortOption[] = ["status", "updated", "key"];
 
 const SORT_LABELS: Record<SortOption, string> = {
   updated: "Recently updated",
@@ -136,9 +137,8 @@ export const JiraPanelTab = memo(function JiraPanelTab({
 
   const cycleSort = useCallback(() => {
     setSort((current) => {
-      const options: SortOption[] = ["status", "updated", "key"];
-      const idx = options.indexOf(current);
-      return options[(idx + 1) % options.length]!;
+      const idx = SORT_OPTIONS.indexOf(current);
+      return SORT_OPTIONS[(idx + 1) % SORT_OPTIONS.length]!;
     });
   }, []);
 
@@ -244,6 +244,14 @@ export const JiraPanelTab = memo(function JiraPanelTab({
       refetchOnWindowFocus: false,
     })),
   });
+  // useQueries returns a new array ref every render even when data is unchanged.
+  // Derive a stable primitive key so actionBranches only recomputes when PR data changes.
+  const prDataKey = pullRequestQueries
+    .map((q) => {
+      const pr = (q.data as GitResolvedPullRequest | null) ?? null;
+      return pr ? `${pr.number}:${pr.state}` : "null";
+    })
+    .join(",");
   const actionBranches = useMemo(
     () =>
       matchingBranches.map((branch, index) => {
@@ -255,7 +263,8 @@ export const JiraPanelTab = memo(function JiraPanelTab({
           pullRequest,
         };
       }),
-    [matchingBranches, pullRequestQueries],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [matchingBranches, prDataKey],
   );
   const actionState = useMemo(
     () =>

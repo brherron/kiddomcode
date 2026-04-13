@@ -93,7 +93,7 @@ async function loadResolvedConfig(cwd: string): Promise<ResolvedJiraConfig> {
     if (code === "ENOENT") {
       throw new JiraError({
         kind: "config",
-        operation: "jira.config.read",
+        operation: "jira.config.missing",
         message: "Missing .t3-jira-config.json in the shared repository root.",
         cause,
       });
@@ -162,14 +162,11 @@ export const makeJiraConfig = () =>
               };
             } catch (cause) {
               if (Schema.is(JiraError)(cause) && cause.kind === "config") {
+                const isMissing = cause.operation === "jira.config.missing";
                 return {
-                  status: cause.message.includes("Missing .t3-jira-config.json")
-                    ? ("missing" as const)
-                    : ("invalid" as const),
+                  status: isMissing ? ("missing" as const) : ("invalid" as const),
                   configPath,
-                  ...(cause.message.includes("Missing .t3-jira-config.json")
-                    ? {}
-                    : { error: cause.message }),
+                  ...(isMissing ? {} : { error: cause.message }),
                 };
               }
 

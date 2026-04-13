@@ -21,19 +21,24 @@ export function invalidateJiraQueries(
     issueKey?: string | null;
   },
 ) {
-  if (input?.issueKey && input.cwd !== undefined) {
-    return queryClient.invalidateQueries({
-      queryKey: jiraQueryKeys.issueDetail(
-        input.environmentId ?? null,
-        input.cwd ?? null,
-        input.issueKey,
-      ),
-    });
+  if (input?.issueKey && input.cwd != null) {
+    return Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: jiraQueryKeys.issueDetail(
+          input.environmentId ?? null,
+          input.cwd,
+          input.issueKey,
+        ),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: jiraQueryKeys.activeTasks(input.environmentId ?? null, input.cwd),
+      }),
+    ]).then(() => undefined);
   }
 
-  if (input?.cwd !== undefined) {
+  if (input?.cwd != null) {
     return queryClient.invalidateQueries({
-      queryKey: jiraQueryKeys.activeTasks(input.environmentId ?? null, input.cwd ?? null),
+      queryKey: jiraQueryKeys.activeTasks(input.environmentId ?? null, input.cwd),
     });
   }
 
