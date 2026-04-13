@@ -40,7 +40,7 @@ function isCodeReviewStatus(issue: JiraWorkActionIssueContext): boolean {
 function buildStartWorkAction(): JiraWorkActionOption {
   return {
     kind: "start_work",
-    label: "Start Work",
+    label: "Start Thread",
     reason: "Create a fresh branch and worktree for this ticket.",
   };
 }

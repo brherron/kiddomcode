@@ -420,6 +420,8 @@ const buildAppUnderTest = (options?: {
                 statusName: "To Do",
                 issueTypeName: "Task",
                 descriptionMarkdown: "",
+                labels: [],
+                relatedIssues: [],
                 isFlagged: false,
                 comments: [],
                 url: `https://example.atlassian.net/browse/${issueKey}`,

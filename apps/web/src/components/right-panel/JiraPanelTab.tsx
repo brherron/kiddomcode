@@ -21,39 +21,13 @@ import {
   type JiraWorkActionBranchContext,
   type JiraWorkActionOption,
 } from "../../lib/jiraWorkActions";
-import ChatMarkdown from "../ChatMarkdown";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { ScrollArea } from "../ui/scroll-area";
 import { Spinner } from "../ui/spinner";
 import { cn } from "../../lib/utils";
-import { BookOpenIcon, BugIcon, ListTodoIcon, SparklesIcon } from "lucide-react";
-
-// ── Status color mapping ──
-
-type StatusStyle = { bg: string; text: string; dot: string };
-
-const STATUS_CATEGORY_STYLES: Record<string, StatusStyle> = {
-  "To Do": { bg: "bg-slate-500/15", text: "text-slate-400", dot: "bg-slate-400" },
-  "In Progress": { bg: "bg-blue-500/15", text: "text-blue-400", dot: "bg-blue-400" },
-  Done: { bg: "bg-green-500/15", text: "text-green-400", dot: "bg-green-400" },
-};
-
-const STATUS_NAME_STYLES: Record<string, StatusStyle> = {
-  "Code Review": { bg: "bg-purple-500/15", text: "text-purple-400", dot: "bg-purple-400" },
-  Backlog: { bg: "bg-zinc-500/15", text: "text-zinc-500", dot: "bg-zinc-500" },
-};
-
-function getStatusStyle(statusName: string, statusCategoryName?: string): StatusStyle {
-  const byName = STATUS_NAME_STYLES[statusName];
-  if (byName) return byName;
-  if (statusCategoryName) {
-    const byCat = STATUS_CATEGORY_STYLES[statusCategoryName];
-    if (byCat) return byCat;
-  }
-  return { bg: "bg-muted", text: "text-muted-foreground", dot: "bg-muted-foreground" };
-}
+import { IssueTypeMark, JiraIssueDetailPane, StatusChip } from "./JiraIssueDetailPane";
 
 // ── Sort logic ──
 
@@ -106,102 +80,6 @@ interface JiraPanelTabProps {
   currentBranch: string | null;
   hasGitRepo: boolean;
   isWorking: boolean;
-}
-
-function StatusChip(props: {
-  statusName: string;
-  statusCategoryName?: string | undefined;
-  size?: "large" | "small";
-}) {
-  const style = getStatusStyle(props.statusName, props.statusCategoryName);
-
-  return (
-    <span
-      className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5",
-        style.bg,
-        props.size === "large" ? "px-2 py-0.5" : "",
-      )}
-    >
-      <span className={cn("size-1.5 rounded-full", style.dot)} />
-      <span
-        className={cn(
-          "text-[9px] font-medium leading-none",
-          style.text,
-          props.size === "large" ? "text-[10px]" : "",
-        )}
-      >
-        {props.statusName}
-      </span>
-    </span>
-  );
-}
-
-function PriorityChip(props: { priorityName: "High" | "Low" }) {
-  const variant = props.priorityName === "High" ? "destructive" : "outline";
-
-  return (
-    <Badge variant={variant} size="sm" className="px-1.5 text-[9px] font-semibold uppercase">
-      {props.priorityName}
-    </Badge>
-  );
-}
-
-function isVisiblePriorityName(priorityName: string | undefined): priorityName is "High" | "Low" {
-  return priorityName === "High" || priorityName === "Low";
-}
-
-function IssueTypeChip(props: { issueTypeName: string }) {
-  const normalizedIssueType = props.issueTypeName.trim().toLowerCase();
-  const chipConfig = {
-    bug: {
-      className: "border-red-500/20 bg-red-500/12 text-red-600",
-      icon: BugIcon,
-    },
-    task: {
-      className: "border-blue-500/20 bg-blue-500/12 text-blue-600",
-      icon: ListTodoIcon,
-    },
-    story: {
-      className: "border-green-500/20 bg-green-500/12 text-green-600",
-      icon: BookOpenIcon,
-    },
-    epic: {
-      className: "border-pink-500/20 bg-pink-500/12 text-pink-600",
-      icon: SparklesIcon,
-    },
-  }[normalizedIssueType];
-
-  const Icon = chipConfig?.icon ?? ListTodoIcon;
-  const className =
-    chipConfig?.className ?? "border-border/70 bg-muted/20 text-muted-foreground";
-
-  return (
-    <Badge
-      variant="outline"
-      size="sm"
-      className={cn("px-1.5 text-[9px] font-semibold uppercase", className)}
-    >
-      <Icon className="size-3" />
-      {props.issueTypeName}
-    </Badge>
-  );
-}
-
-function StoryPointsChip(props: { storyPoints: number }) {
-  return (
-    <Badge variant="outline" size="sm" className="px-1.5 text-[9px] font-semibold uppercase">
-      {props.storyPoints} pts
-    </Badge>
-  );
-}
-
-function FlagChip() {
-  return (
-    <Badge variant="warning" size="sm" className="px-1.5 text-[9px] font-semibold uppercase">
-      Flagged
-    </Badge>
-  );
 }
 
 function isActionDisabled(input: {
@@ -454,25 +332,9 @@ export const JiraPanelTab = memo(function JiraPanelTab({
     <div className="flex h-full flex-col">
       {/* ── Ticket list (scrollable, fills remaining space) ── */}
       <div className="min-h-0 flex-1">
-        <ScrollArea className="h-full">
-          <div className="space-y-0.5 p-2">
-            {pinnedIssueKey ? (
-              <button
-                type="button"
-                onClick={() => onSelectIssueKey(pinnedIssueKey)}
-                className="flex w-full items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/8 px-2 py-1 text-left"
-              >
-                <Badge
-                  variant="outline"
-                  className="shrink-0 border-amber-500/40 px-1 py-0 text-[9px] text-amber-700"
-                >
-                  Active
-                </Badge>
-                <span className="truncate text-xs text-foreground">{pinnedIssueKey}</span>
-              </button>
-            ) : null}
-
-            <div className="flex items-center justify-between px-1 py-1">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden">
+          <div className="shrink-0 border-b border-border/60 bg-background/95 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-1.5">
                 <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase">
                   My Tasks
@@ -506,208 +368,152 @@ export const JiraPanelTab = memo(function JiraPanelTab({
                 </button>
               </div>
             </div>
-
-            {activeTasksQuery.isPending ? (
-              <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
-                <Spinner className="size-3" />
-                Loading…
-              </div>
-            ) : sortedIssues.length ? (
-              sortedIssues.map((issue) => {
-                const active = issue.key === selectedIssueKey;
-                return (
-                  <button
-                    key={issue.key}
-                    type="button"
-                    onClick={() => onSelectIssueKey(issue.key)}
-                    className={cn(
-                      "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors",
-                      active
-                        ? "bg-blue-500/10 text-foreground"
-                        : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                    )}
-                  >
-                    <span className="shrink-0 text-[10px] font-medium tabular-nums">
-                      {issue.key}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-xs">{issue.summary}</span>
-                    <StatusChip
-                      statusName={issue.statusName}
-                      statusCategoryName={issue.statusCategoryName}
-                    />
-                  </button>
-                );
-              })
-            ) : (
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">No active tasks found.</p>
-            )}
           </div>
-        </ScrollArea>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-0.5 p-2">
+              {pinnedIssueKey ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectIssueKey(pinnedIssueKey)}
+                  className="flex w-full items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/8 px-2 py-1 text-left"
+                >
+                  <Badge
+                    variant="outline"
+                    className="shrink-0 border-amber-500/40 px-1 py-0 text-[9px] text-amber-700"
+                  >
+                    Active
+                  </Badge>
+                  <span className="truncate text-xs text-foreground">{pinnedIssueKey}</span>
+                </button>
+              ) : null}
+              {activeTasksQuery.isPending ? (
+                <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground">
+                  <Spinner className="size-3" />
+                  Loading…
+                </div>
+              ) : sortedIssues.length ? (
+                sortedIssues.map((issue) => {
+                  const active = issue.key === selectedIssueKey;
+                  return (
+                    <button
+                      key={issue.key}
+                      type="button"
+                      onClick={() => onSelectIssueKey(issue.key)}
+                      className={cn(
+                        "flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left transition-colors",
+                        active
+                          ? "bg-blue-500/10 text-foreground"
+                          : "text-muted-foreground hover:bg-muted/40 hover:text-foreground",
+                      )}
+                    >
+                      <IssueTypeMark issueTypeName={issue.issueTypeName} size="small" />
+                      <span className="shrink-0 text-[10px] font-medium tabular-nums">
+                        {issue.key}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs">{issue.summary}</span>
+                      <StatusChip
+                        statusName={issue.statusName}
+                        statusCategoryName={issue.statusCategoryName}
+                      />
+                    </button>
+                  );
+                })
+              ) : (
+                <p className="px-2 py-1.5 text-xs text-muted-foreground">No active tasks found.</p>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
       </div>
 
       {/* ── Detail pane (fixed 66vh) ── */}
       <div className="flex h-[66vh] shrink-0 flex-col border-t border-border/60">
-        <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2">
-          <div className="min-w-0 space-y-1">
-            {currentIssue ? (
-              <>
-                <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                  <span className="text-[14px] text-muted-foreground">{currentIssue.key}</span>
-                  <StatusChip
-                    size="large"
-                    statusName={currentIssue.statusName}
-                    statusCategoryName={currentIssue.statusCategoryName}
-                  />
-                </div>
-              </>
-            ) : (
-              <span className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase">
-                Detail
-              </span>
-            )}
-          </div>
-          {currentIssue && primaryAction ? (
-            <div className="flex shrink-0 items-center">
-              <Button
-                variant="default"
-                size="xs"
-                onClick={() => void onRunAction(currentIssue, primaryAction)}
-                disabled={primaryActionDisabled}
-                className="rounded-r-none text-[10px]"
-              >
-                {primaryAction.label}
-              </Button>
-              <Menu>
-                <MenuTrigger
-                  render={
+        <div className="min-h-0 flex-1">
+          {!hasGitRepo ? (
+            <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/8 px-2 py-1.5 text-xs text-amber-800">
+              <AlertCircleIcon className="size-3 shrink-0" />
+              Start Thread and Continue Work require a git-backed project.
+            </div>
+          ) : null}
+
+          {selectedIssueKey && issueDetailQuery.isFetching && !currentIssue ? (
+            <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+              <Spinner className="size-3" />
+              Loading…
+            </div>
+          ) : currentIssue ? (
+            <JiraIssueDetailPane
+              issue={currentIssue}
+              cwd={cwd}
+              actionSlot={
+                primaryAction ? (
+                  <div className="flex shrink-0 items-center">
                     <Button
                       variant="default"
                       size="xs"
-                      className="rounded-l-none border-l-white/12 px-1.5"
-                      aria-label="Jira work actions"
-                      disabled={menuActions.length <= 1}
-                    />
-                  }
-                >
-                  <ChevronDownIcon className="size-3.5" />
-                </MenuTrigger>
-                <MenuPopup align="end" className="w-80">
-                  {menuActions.map((action, index) => {
-                    const disabled = isActionDisabled({
-                      action,
-                      hasGitRepo,
-                      cwd,
-                      currentIssue,
-                      pinnedIssueKey,
-                      isWorking,
-                    });
-                    return (
-                      <MenuItem
-                        key={`${action.kind}-${action.branchName ?? "default"}`}
-                        disabled={disabled}
-                        onClick={() => void onRunAction(currentIssue, action)}
-                        className="items-start"
-                      >
-                        <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="truncate font-medium">{action.label}</span>
-                            {index === 0 ? (
-                              <span className="rounded-full bg-blue-500/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-500">
-                                Recommended
-                              </span>
-                            ) : null}
-                          </div>
-                          <span className="text-xs leading-snug text-muted-foreground">
-                            {buildActionReasonText(action, hasGitRepo)}
-                          </span>
-                        </div>
-                      </MenuItem>
-                    );
-                  })}
-                </MenuPopup>
-              </Menu>
-            </div>
-          ) : null}
-        </div>
-
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="px-3 pb-3">
-            {!hasGitRepo ? (
-              <div className="flex items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/8 px-2 py-1.5 text-xs text-amber-800">
-                <AlertCircleIcon className="size-3 shrink-0" />
-                Start Work and Continue Work require a git-backed project.
-              </div>
-            ) : null}
-
-            {selectedIssueKey && issueDetailQuery.isFetching && !currentIssue ? (
-              <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
-                <Spinner className="size-3" />
-                Loading…
-              </div>
-            ) : currentIssue ? (
-              <div className="space-y-3">
-                <h3 className="text-l font-bold text-foreground">{currentIssue.summary}</h3>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <IssueTypeChip issueTypeName={currentIssue.issueTypeName} />
-                  {typeof currentIssue.storyPoints === "number" ? (
-                    <StoryPointsChip storyPoints={currentIssue.storyPoints} />
-                  ) : null}
-                  {isVisiblePriorityName(currentIssue.priorityName) ? (
-                    <PriorityChip priorityName={currentIssue.priorityName} />
-                  ) : null}
-                  {currentIssue.isFlagged ? <FlagChip /> : null}
-                  {currentIssue.parentSummary ? (
-                    <Badge
-                      variant="outline"
-                      size="sm"
-                      className="max-w-full truncate px-1.5 text-[9px] font-semibold"
+                      onClick={() => void onRunAction(currentIssue, primaryAction)}
+                      disabled={primaryActionDisabled}
+                      className="rounded-r-none text-[10px]"
                     >
-                      {currentIssue.parentSummary}
-                    </Badge>
-                  ) : null}
-                </div>
-                <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase">
-                  Description
-                </p>
-                {currentIssue.descriptionMarkdown.trim().length > 0 ? (
-                  <div className="text-xs">
-                    <ChatMarkdown
-                      text={currentIssue.descriptionMarkdown}
-                      cwd={cwd}
-                      isStreaming={false}
-                    />
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">No description.</p>
-                )}
-
-                {currentIssue.comments.length > 0 ? (
-                  <div className="space-y-2">
-                    <p className="text-[10px] font-semibold tracking-widest text-muted-foreground/50 uppercase">
-                      Comments
-                    </p>
-                    {currentIssue.comments.map((comment) => (
-                      <div
-                        key={comment.id}
-                        className="rounded-md border border-border/60 bg-muted/20 p-2"
+                      {primaryAction.label}
+                    </Button>
+                    <Menu>
+                      <MenuTrigger
+                        render={
+                          <Button
+                            variant="default"
+                            size="xs"
+                            className="rounded-l-none border-l-white/12 px-1.5"
+                            aria-label="Jira work actions"
+                            disabled={menuActions.length <= 1}
+                          />
+                        }
                       >
-                        <div className="mb-1 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                          <span>{comment.authorDisplayName}</span>
-                          <span>{new Date(comment.createdAt).toLocaleString()}</span>
-                        </div>
-                        <div className="text-xs">
-                          <ChatMarkdown text={comment.bodyMarkdown} cwd={cwd} isStreaming={false} />
-                        </div>
-                      </div>
-                    ))}
+                        <ChevronDownIcon className="size-3.5" />
+                      </MenuTrigger>
+                      <MenuPopup align="end" className="w-80">
+                        {menuActions.map((action, index) => {
+                          const disabled = isActionDisabled({
+                            action,
+                            hasGitRepo,
+                            cwd,
+                            currentIssue,
+                            pinnedIssueKey,
+                            isWorking,
+                          });
+                          return (
+                            <MenuItem
+                              key={`${action.kind}-${action.branchName ?? "default"}`}
+                              disabled={disabled}
+                              onClick={() => void onRunAction(currentIssue, action)}
+                              className="items-start"
+                            >
+                              <div className="flex min-w-0 flex-1 flex-col gap-0.5 py-0.5">
+                                <div className="flex items-center gap-2">
+                                  <span className="truncate font-medium">{action.label}</span>
+                                  {index === 0 ? (
+                                    <span className="rounded-full bg-blue-500/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-blue-500">
+                                      Recommended
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <span className="text-xs leading-snug text-muted-foreground">
+                                  {buildActionReasonText(action, hasGitRepo)}
+                                </span>
+                              </div>
+                            </MenuItem>
+                          );
+                        })}
+                      </MenuPopup>
+                    </Menu>
                   </div>
-                ) : null}
-              </div>
-            ) : (
-              <p className="py-2 text-xs text-muted-foreground">Select a ticket above.</p>
-            )}
-          </div>
-        </ScrollArea>
+                ) : null
+              }
+            />
+          ) : (
+            <p className="py-2 text-xs text-muted-foreground">Select a ticket above.</p>
+          )}
+        </div>
       </div>
     </div>
   );

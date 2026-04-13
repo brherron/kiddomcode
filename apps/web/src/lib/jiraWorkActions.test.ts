@@ -90,7 +90,7 @@ describe("buildJiraWorkActionState", () => {
 
     expect(result.primaryAction.kind).toBe("start_work");
     expect(result.actions.map((action) => action.label)).toEqual([
-      "Start Work",
+      "Start Thread",
       "Continue on feature/web-101-current",
       "Continue on feature/web-101-old",
       "Start Review",

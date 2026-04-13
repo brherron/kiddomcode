@@ -154,7 +154,7 @@ describe("JiraServiceLive", () => {
     );
   }
 
-  it("lists active tasks with the expected JQL and minimal fields", async () => {
+  it("lists active tasks with the expected JQL and issue type field", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const fetchSpy = vi.fn(async (input: string | URL, init?: RequestInit) => {
@@ -165,7 +165,7 @@ describe("JiraServiceLive", () => {
           expect(body.jql).toBe(
             "assignee = currentUser() AND status != Done ORDER BY updated DESC",
           );
-          expect(body.fields).toEqual(["summary", "status"]);
+          expect(body.fields).toEqual(["summary", "status", "issuetype"]);
 
           return new Response(
             JSON.stringify({
@@ -179,6 +179,9 @@ describe("JiraServiceLive", () => {
                       statusCategory: {
                         name: "In Progress",
                       },
+                    },
+                    issuetype: {
+                      name: "Story",
                     },
                   },
                 },
@@ -199,6 +202,7 @@ describe("JiraServiceLive", () => {
               summary: "Implement Jira panel",
               statusName: "In Progress",
               statusCategoryName: "In Progress",
+              issueTypeName: "Story",
             },
           ],
         });
@@ -262,6 +266,7 @@ describe("JiraServiceLive", () => {
                 priority: {
                   name: "High",
                 },
+                labels: ["frontend", "customer-facing"],
                 flagged: true,
                 parent: {
                   key: "WEB-100",
@@ -291,9 +296,15 @@ describe("JiraServiceLive", () => {
                   ],
                 },
                 customfield_12345: 5,
+                customfield_10040: {
+                  self: "https://example.atlassian.net/rest/api/3/customFieldOption/10040",
+                  value: "ACV $1M+",
+                  id: "10040",
+                },
               },
               names: {
                 customfield_12345: "Story Points",
+                customfield_10040: "ACV",
               },
             }),
           );
@@ -310,7 +321,9 @@ describe("JiraServiceLive", () => {
           statusName: "Selected for Development",
           statusCategoryName: "To Do",
           issueTypeName: "Story",
+          acv: "ACV $1M+",
           priorityName: "High",
+          labels: ["frontend", "customer-facing"],
           isFlagged: true,
           parentKey: "WEB-100",
           parentSummary: "Parent ticket",
@@ -331,7 +344,7 @@ describe("JiraServiceLive", () => {
     );
   });
 
-  it("omits medium priority from issue detail", async () => {
+  it("preserves medium priority in issue detail", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const fetchSpy = vi.fn(async (input: string | URL) => {
@@ -367,7 +380,269 @@ describe("JiraServiceLive", () => {
           return yield* jiraService.getIssueDetail("/repo/worktree", "WEB-101");
         }).pipe(Effect.provide(provideService(fetchSpy)));
 
-        expect(result.issue.priorityName).toBeUndefined();
+        expect(result.issue.priorityName).toBe("Medium");
+      }),
+    );
+  });
+
+  it("normalizes direct subtasks and supported issue links into related issues", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async () => {
+          return new Response(
+            JSON.stringify({
+              key: "WEB-101",
+              fields: {
+                summary: "Implement Jira panel",
+                description: null,
+                status: {
+                  name: "In Progress",
+                  statusCategory: {
+                    name: "In Progress",
+                  },
+                },
+                issuetype: {
+                  name: "Task",
+                },
+                comment: {
+                  comments: [],
+                },
+                labels: [],
+                subtasks: [
+                  {
+                    key: "WEB-102",
+                    fields: {
+                      summary: "Follow-up task",
+                      status: {
+                        name: "In Progress",
+                        statusCategory: {
+                          name: "In Progress",
+                        },
+                      },
+                      issuetype: {
+                        name: "Sub-task",
+                      },
+                    },
+                  },
+                ],
+                issuelinks: [
+                  {
+                    type: {
+                      name: "Relates",
+                    },
+                    outwardIssue: {
+                      key: "WEB-103",
+                      fields: {
+                        summary: "Shared dependency",
+                        status: {
+                          name: "To Do",
+                          statusCategory: {
+                            name: "To Do",
+                          },
+                        },
+                        issuetype: {
+                          name: "Task",
+                        },
+                      },
+                    },
+                  },
+                  {
+                    type: {
+                      name: "Duplicate",
+                    },
+                    outwardIssue: {
+                      key: "WEB-104",
+                      fields: {
+                        summary: "Legacy duplicate",
+                        status: {
+                          name: "Done",
+                          statusCategory: {
+                            name: "Done",
+                          },
+                        },
+                        issuetype: {
+                          name: "Bug",
+                        },
+                      },
+                    },
+                  },
+                  {
+                    type: {
+                      name: "Duplicate",
+                    },
+                    inwardIssue: {
+                      key: "WEB-105",
+                      fields: {
+                        summary: "Canonical tracker",
+                        status: {
+                          name: "In Progress",
+                          statusCategory: {
+                            name: "In Progress",
+                          },
+                        },
+                        issuetype: {
+                          name: "Story",
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+              names: {},
+            }),
+          );
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueDetail("/repo/worktree", "WEB-101");
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result.issue.relatedIssues).toEqual([
+          {
+            key: "WEB-102",
+            summary: "Follow-up task",
+            issueTypeName: "Sub-task",
+            statusName: "In Progress",
+            statusCategoryName: "In Progress",
+            relationshipLabel: "Sub-task",
+          },
+          {
+            key: "WEB-103",
+            summary: "Shared dependency",
+            issueTypeName: "Task",
+            statusName: "To Do",
+            statusCategoryName: "To Do",
+            relationshipLabel: "Relates to",
+          },
+          {
+            key: "WEB-104",
+            summary: "Legacy duplicate",
+            issueTypeName: "Bug",
+            statusName: "Done",
+            statusCategoryName: "Done",
+            relationshipLabel: "Duplicates",
+          },
+          {
+            key: "WEB-105",
+            summary: "Canonical tracker",
+            issueTypeName: "Story",
+            statusName: "In Progress",
+            statusCategoryName: "In Progress",
+            relationshipLabel: "Is duplicated by",
+          },
+        ]);
+      }),
+    );
+  });
+
+  it("preserves custom jira directional link labels in related issues", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async () => {
+          return new Response(
+            JSON.stringify({
+              key: "CURR-3028",
+              fields: {
+                summary: "Math keyboard updates",
+                description: null,
+                status: {
+                  name: "In Progress",
+                  statusCategory: {
+                    name: "In Progress",
+                  },
+                },
+                issuetype: {
+                  name: "Task",
+                },
+                comment: {
+                  comments: [],
+                },
+                labels: [],
+                subtasks: [],
+                issuelinks: [
+                  {
+                    type: {
+                      name: "Polaris datapoint work item link",
+                      inward: "added to idea",
+                      outward: "is idea for",
+                    },
+                    outwardIssue: {
+                      key: "CURR-3048",
+                      fields: {
+                        summary: "Testing",
+                        status: {
+                          name: "To Do",
+                          statusCategory: {
+                            name: "To Do",
+                          },
+                        },
+                        issuetype: {
+                          name: "Task",
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+              names: {},
+            }),
+          );
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueDetail("/repo/worktree", "CURR-3028");
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result.issue.relatedIssues).toEqual([
+          {
+            key: "CURR-3048",
+            summary: "Testing",
+            issueTypeName: "Task",
+            statusName: "To Do",
+            statusCategoryName: "To Do",
+            relationshipLabel: "Is idea for",
+          },
+        ]);
+      }),
+    );
+  });
+
+  it("defaults missing priority to medium in issue detail", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async () => {
+          return new Response(
+            JSON.stringify({
+              key: "WEB-101",
+              fields: {
+                summary: "Implement Jira panel",
+                description: null,
+                status: {
+                  name: "In Progress",
+                  statusCategory: {
+                    name: "In Progress",
+                  },
+                },
+                issuetype: {
+                  name: "Task",
+                },
+                comment: {
+                  comments: [],
+                },
+                labels: [],
+              },
+            }),
+          );
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueDetail("/repo/worktree", "WEB-101");
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result.issue.priorityName).toBe("Medium");
       }),
     );
   });

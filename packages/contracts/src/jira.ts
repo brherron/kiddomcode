@@ -17,6 +17,7 @@ export const JiraIssueSummary = Schema.Struct({
   summary: Schema.String,
   statusName: Schema.String,
   statusCategoryName: Schema.optional(Schema.String),
+  issueTypeName: Schema.String,
 });
 export type JiraIssueSummary = typeof JiraIssueSummary.Type;
 
@@ -28,6 +29,16 @@ export const JiraIssueComment = Schema.Struct({
 });
 export type JiraIssueComment = typeof JiraIssueComment.Type;
 
+export const JiraRelatedIssue = Schema.Struct({
+  key: TrimmedNonEmptyString,
+  summary: Schema.String,
+  statusName: Schema.String,
+  statusCategoryName: Schema.optional(Schema.String),
+  issueTypeName: Schema.String,
+  relationshipLabel: TrimmedNonEmptyString,
+});
+export type JiraRelatedIssue = typeof JiraRelatedIssue.Type;
+
 export const JiraIssueDetail = Schema.Struct({
   key: TrimmedNonEmptyString,
   summary: Schema.String,
@@ -35,10 +46,13 @@ export const JiraIssueDetail = Schema.Struct({
   statusCategoryName: Schema.optional(Schema.String),
   issueTypeName: Schema.String,
   priorityName: Schema.optional(Schema.String),
+  labels: Schema.Array(Schema.String),
   isFlagged: Schema.Boolean,
   parentKey: Schema.optional(Schema.String),
   parentSummary: Schema.optional(Schema.String),
+  relatedIssues: Schema.Array(JiraRelatedIssue),
   storyPoints: Schema.optional(Schema.Number),
+  acv: Schema.optional(Schema.String),
   descriptionMarkdown: Schema.String,
   comments: Schema.Array(JiraIssueComment),
   url: Schema.String,

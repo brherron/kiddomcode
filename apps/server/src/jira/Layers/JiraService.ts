@@ -7,6 +7,7 @@ import {
   type JiraGetIssueDetailResult,
   type JiraIssueComment,
   type JiraIssueDetail,
+  type JiraRelatedIssue,
   type JiraIssueSummary,
   type JiraListActiveTasksResult,
   type JiraRunAutomationInput,
@@ -19,6 +20,7 @@ import { JiraService } from "../Services/JiraService.ts";
 const ACTIVE_TASK_JQL = "assignee = currentUser() AND status != Done ORDER BY updated DESC";
 const ACTIVE_TASK_MAX_RESULTS = 25;
 const RECENT_COMMENT_LIMIT = 10;
+const ACV_FIELD_ID = "customfield_10040";
 
 function toErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message.length > 0 ? cause.message : fallback;
@@ -36,7 +38,96 @@ function mapIssueSummary(issue: any): JiraIssueSummary {
     ...(issue.fields.status.statusCategory?.name
       ? { statusCategoryName: issue.fields.status.statusCategory.name }
       : {}),
+    issueTypeName: issue.fields.issuetype?.name ?? "Issue",
   };
+}
+
+function mapRelatedIssue(issue: any, relationshipLabel: string): JiraRelatedIssue | undefined {
+  const key = typeof issue?.key === "string" ? issue.key : undefined;
+  const summary = typeof issue?.fields?.summary === "string" ? issue.fields.summary : undefined;
+  const statusName =
+    typeof issue?.fields?.status?.name === "string" ? issue.fields.status.name : undefined;
+
+  if (!key || !summary || !statusName || relationshipLabel.trim().length === 0) {
+    return undefined;
+  }
+
+  return {
+    key,
+    summary,
+    statusName,
+    ...(typeof issue.fields.status.statusCategory?.name === "string"
+      ? { statusCategoryName: issue.fields.status.statusCategory.name }
+      : {}),
+    issueTypeName:
+      typeof issue?.fields?.issuetype?.name === "string" ? issue.fields.issuetype.name : "Issue",
+    relationshipLabel,
+  };
+}
+
+function formatRelationshipLabel(label: string): string {
+  const trimmedLabel = label.trim();
+  if (trimmedLabel.length === 0) {
+    return trimmedLabel;
+  }
+
+  return trimmedLabel.charAt(0).toUpperCase() + trimmedLabel.slice(1);
+}
+
+function mapIssueLinksToRelatedIssues(issueLinks: unknown): JiraRelatedIssue[] {
+  if (!Array.isArray(issueLinks)) {
+    return [];
+  }
+
+  return issueLinks.flatMap((issueLink) => {
+    const linkTypeName =
+      typeof issueLink?.type?.name === "string" ? issueLink.type.name.trim() : "";
+    const outwardLabel =
+      typeof issueLink?.type?.outward === "string"
+        ? issueLink.type.outward.trim()
+        : linkTypeName === "Relates"
+          ? "Relates to"
+          : linkTypeName === "Duplicate"
+            ? "Duplicates"
+            : "";
+    const inwardLabel =
+      typeof issueLink?.type?.inward === "string"
+        ? issueLink.type.inward.trim()
+        : linkTypeName === "Relates"
+          ? "Relates to"
+          : linkTypeName === "Duplicate"
+            ? "Is duplicated by"
+            : "";
+
+    if (issueLink?.outwardIssue) {
+      const relatedIssue = mapRelatedIssue(
+        issueLink.outwardIssue,
+        formatRelationshipLabel(outwardLabel),
+      );
+      return relatedIssue ? [relatedIssue] : [];
+    }
+
+    if (issueLink?.inwardIssue) {
+      const relatedIssue = mapRelatedIssue(
+        issueLink.inwardIssue,
+        formatRelationshipLabel(inwardLabel),
+      );
+      return relatedIssue ? [relatedIssue] : [];
+    }
+
+    return [];
+  });
+}
+
+function mapDirectRelatedIssues(issue: any): JiraRelatedIssue[] {
+  const subtasks = Array.isArray(issue.fields.subtasks)
+    ? issue.fields.subtasks.flatMap((subtask: unknown) => {
+        const relatedIssue = mapRelatedIssue(subtask, "Sub-task");
+        return relatedIssue ? [relatedIssue] : [];
+      })
+    : [];
+
+  return [...subtasks, ...mapIssueLinksToRelatedIssues(issue.fields.issuelinks)];
 }
 
 function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
@@ -51,20 +142,24 @@ function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
           createdAt: String(comment.created),
         }))
     : [];
-  const priorityName =
-    issue.fields.priority?.name === "High" || issue.fields.priority?.name === "Low"
-      ? issue.fields.priority.name
-      : undefined;
+  const priorityName = issue.fields.priority?.name ? String(issue.fields.priority.name) : "Medium";
   const parent = issue.fields.parent;
+  const labels = Array.isArray(issue.fields.labels)
+    ? issue.fields.labels.map((label: unknown) => String(label))
+    : [];
   const storyPointsFieldId = Object.entries(issue.names ?? {}).find(
     ([, name]) =>
-      typeof name === "string" &&
-      /story points?|story point estimate/i.test(name.trim()),
+      typeof name === "string" && /story points?|story point estimate/i.test(name.trim()),
   )?.[0];
   const storyPointsValue =
     storyPointsFieldId && typeof issue.fields[storyPointsFieldId] === "number"
       ? issue.fields[storyPointsFieldId]
       : undefined;
+  const acvValue =
+    typeof issue.fields[ACV_FIELD_ID]?.value === "string"
+      ? issue.fields[ACV_FIELD_ID].value
+      : undefined;
+  const relatedIssues = mapDirectRelatedIssues(issue);
 
   return {
     key: issue.key,
@@ -75,10 +170,13 @@ function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
       : {}),
     issueTypeName: issue.fields.issuetype?.name ?? "Issue",
     ...(priorityName ? { priorityName } : {}),
+    labels,
     isFlagged: Boolean(issue.fields.flagged),
     ...(parent?.key ? { parentKey: String(parent.key) } : {}),
     ...(parent?.fields?.summary ? { parentSummary: String(parent.fields.summary) } : {}),
+    relatedIssues,
     ...(typeof storyPointsValue === "number" ? { storyPoints: storyPointsValue } : {}),
+    ...(acvValue ? { acv: acvValue } : {}),
     descriptionMarkdown: adfToMarkdown(issue.fields.description),
     comments,
     url: `${baseUrl}/browse/${issue.key}`,
@@ -201,7 +299,7 @@ export const makeJiraService = (options?: {
                 method: "POST",
                 body: {
                   jql: ACTIVE_TASK_JQL,
-                  fields: ["summary", "status"],
+                  fields: ["summary", "status", "issuetype"],
                   maxResults: ACTIVE_TASK_MAX_RESULTS,
                 },
               },
@@ -223,10 +321,7 @@ export const makeJiraService = (options?: {
               `/rest/api/3/issue/${encodeURIComponent(issueKey)}`,
               "https://jira.local",
             );
-            issueUrl.searchParams.set(
-              "fields",
-              "*all",
-            );
+            issueUrl.searchParams.set("fields", "*all");
             issueUrl.searchParams.set("expand", "names");
             const { config, payload } = yield* request(
               cwd,

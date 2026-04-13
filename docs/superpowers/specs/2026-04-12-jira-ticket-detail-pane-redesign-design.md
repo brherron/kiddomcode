@@ -9,6 +9,7 @@ Replace the current Jira issue detail pane with a denser, more structured layout
 This redesign applies only to the Jira ticket detail view in `apps/web/src/components/right-panel/JiraPanelTab.tsx`.
 
 In scope:
+
 - Keep the existing ticket list above the detail pane.
 - Keep existing Jira data-fetching and selection behavior.
 - Keep existing work-action controls.
@@ -19,6 +20,7 @@ In scope:
 - Add a `Latest update` card sourced only from Jira comments.
 
 Out of scope:
+
 - Redesigning the right-panel shell.
 - Changing Plan panel layouts.
 - Adding new update sources beyond Jira comments.
@@ -27,6 +29,7 @@ Out of scope:
 ## UX Structure
 
 The Jira side panel remains split into two areas:
+
 1. Ticket list
 2. Selected ticket detail
 
@@ -44,6 +47,7 @@ The selected ticket detail is reorganized into four stacked sections:
 Render metadata as labeled rows instead of a loose chip cloud.
 
 Planned rows:
+
 - `Properties`: status, priority, story points, flagged state, and issue key
 - `Parent`: parent ticket summary when available
 
@@ -63,6 +67,7 @@ Keep older comments below the latest-update card in a simpler stacked format so 
 ## Architecture
 
 Introduce a focused presentational component, tentatively `JiraIssueDetailPane`, and keep `JiraPanelTab` responsible for:
+
 - data loading
 - action-state derivation
 - selection state
@@ -96,6 +101,7 @@ If Jira comments are not already ordered newest-first, the detail component must
 ## Testing
 
 Add focused component/browser tests around the new detail rendering:
+
 - issue-type icon and color treatment render for a selected issue
 - description appears directly below the summary
 - `Parent` row renders only when parent data exists

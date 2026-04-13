@@ -54,6 +54,7 @@ const {
             key: "WEB-101",
             summary: "Implement Jira panel",
             statusName: "In Progress",
+            issueTypeName: "Task",
           },
         ],
       },
@@ -150,6 +151,7 @@ describe("JiraPanelTab", () => {
             key: "WEB-101",
             summary: "Implement Jira panel",
             statusName: "In Progress",
+            issueTypeName: "Task",
           },
         ],
       },
@@ -335,6 +337,7 @@ describe("JiraPanelTab", () => {
             key: "WEB-101",
             summary: "Implement Jira panel",
             statusName: "Code Review",
+            issueTypeName: "Task",
           },
         ],
       },
@@ -423,7 +426,100 @@ describe("JiraPanelTab", () => {
     try {
       await expect.element(page.getByText("Low")).toBeInTheDocument();
       await expect.element(page.getByText("Flagged")).toBeInTheDocument();
+      await expect.element(page.getByText("Parent")).toBeInTheDocument();
       await expect.element(page.getByText("Parent ticket")).toBeInTheDocument();
+      await expect.element(page.getByText("Latest update")).toBeInTheDocument();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("shows the newest comment in the latest update card and leaves older comments below", async () => {
+    issueDetailRef.current = {
+      data: {
+        issue: {
+          key: "WEB-101",
+          summary: "Implement Jira panel",
+          statusName: "In Progress",
+          issueTypeName: "Task",
+          descriptionMarkdown: "Ship the right panel.",
+          comments: [
+            {
+              id: "10001",
+              authorDisplayName: "Reviewer One",
+              bodyMarkdown: "Older update.",
+              createdAt: "2026-04-10T16:00:00.000Z",
+            },
+            {
+              id: "10002",
+              authorDisplayName: "Reviewer Two",
+              bodyMarkdown: "Newest update.",
+              createdAt: "2026-04-11T08:00:00.000Z",
+            },
+          ],
+          url: "https://example.atlassian.net/browse/WEB-101",
+        } as any,
+      },
+      isPending: false,
+      isFetching: false,
+    };
+
+    const screen = await render(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey="WEB-101"
+        onSelectIssueKey={selectIssueSpy}
+        onRunAction={startWorkSpy}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    try {
+      await expect.element(page.getByText("Latest update")).toBeInTheDocument();
+      await expect.element(page.getByText("Newest update.")).toBeInTheDocument();
+      await expect.element(page.getByText("Reviewer Two")).toBeInTheDocument();
+      await expect.element(page.getByText("Older update.")).toBeInTheDocument();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("shows an empty latest update state when there are no comments", async () => {
+    issueDetailRef.current = {
+      data: {
+        issue: {
+          key: "WEB-101",
+          summary: "Implement Jira panel",
+          statusName: "In Progress",
+          issueTypeName: "Task",
+          descriptionMarkdown: "Ship the right panel.",
+          comments: [],
+          url: "https://example.atlassian.net/browse/WEB-101",
+        } as any,
+      },
+      isPending: false,
+      isFetching: false,
+    };
+
+    const screen = await render(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey="WEB-101"
+        onSelectIssueKey={selectIssueSpy}
+        onRunAction={startWorkSpy}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    try {
+      await expect.element(page.getByText("Latest update")).toBeInTheDocument();
+      await expect.element(page.getByText("No updates yet.")).toBeInTheDocument();
     } finally {
       await screen.unmount();
     }
