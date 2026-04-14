@@ -47,6 +47,7 @@ import { WorkspaceFileSystemLive } from "./workspace/Layers/WorkspaceFileSystem"
 import { WorkspacePathsLive } from "./workspace/Layers/WorkspacePaths";
 import { ProjectSetupScriptRunnerLive } from "./project/Layers/ProjectSetupScriptRunner";
 import { JiraConfigLive } from "./jira/Layers/JiraConfig";
+import { JiraConnectionServiceLive } from "./jira/Layers/JiraConnectionService";
 import { JiraServiceLive } from "./jira/Layers/JiraService";
 import { ObservabilityLive } from "./observability/Layers/Observability";
 import { ServerEnvironmentLive } from "./environment/Layers/ServerEnvironment";
@@ -207,6 +208,7 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(KeybindingsLive),
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(ServerSettingsLive),
+  Layer.provideMerge(JiraConnectionServiceLive.pipe(Layer.provide(ServerSettingsLive))),
   Layer.provideMerge(JiraConfigLive),
   Layer.provideMerge(JiraServiceLive.pipe(Layer.provide(JiraConfigLive))),
   Layer.provideMerge(WorkspaceLayerLive),

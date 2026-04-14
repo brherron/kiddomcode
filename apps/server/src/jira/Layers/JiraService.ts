@@ -4,6 +4,7 @@ import { Effect, Layer } from "effect";
 
 import {
   JiraError,
+  type JiraConnectionStatusResult,
   type JiraGetIssueDetailResult,
   type JiraIssueComment,
   type JiraIssueDetail,
@@ -15,6 +16,7 @@ import {
 } from "@t3tools/contracts";
 import { adfToMarkdown } from "../adfToMarkdown.ts";
 import { JiraConfig } from "../Services/JiraConfig.ts";
+import { JiraConnectionService } from "../Services/JiraConnectionService.ts";
 import { JiraService } from "../Services/JiraService.ts";
 
 const ACTIVE_TASK_JQL = "assignee = currentUser() AND status != Done ORDER BY updated DESC";
@@ -212,6 +214,7 @@ export const makeJiraService = (options?: {
     JiraService,
     Effect.gen(function* () {
       const jiraConfig = yield* JiraConfig;
+      const jiraConnectionService = yield* JiraConnectionService;
       const fetchImplementation: JiraFetchImplementation =
         options?.fetchImplementation ?? ((input, init) => globalThis.fetch(input, init));
 
@@ -296,6 +299,10 @@ export const makeJiraService = (options?: {
       });
 
       return {
+        getConnectionStatus: () => jiraConnectionService.getConnectionStatus(),
+        saveConnection: (input) => jiraConnectionService.saveConnection(input),
+        testConnection: (input) => jiraConnectionService.testConnection(input),
+        disconnect: () => jiraConnectionService.disconnect(),
         getConfigStatus: (cwd: string) => jiraConfig.getConfigStatus(cwd),
         listActiveTasks: (cwd: string) =>
           Effect.gen(function* () {

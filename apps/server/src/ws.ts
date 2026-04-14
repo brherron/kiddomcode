@@ -870,6 +870,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             git.initRepo(input).pipe(Effect.tap(() => refreshGitStatus(input.cwd))),
             { "rpc.aggregate": "git" },
           ),
+        [WS_METHODS.jiraGetConnectionStatus]: (_input) =>
+          observeRpcEffect(WS_METHODS.jiraGetConnectionStatus, jiraService.getConnectionStatus(), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraSaveConnection]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraSaveConnection, jiraService.saveConnection(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraTestConnection]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraTestConnection, jiraService.testConnection(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraDisconnect]: (_input) =>
+          observeRpcEffect(WS_METHODS.jiraDisconnect, jiraService.disconnect(), {
+            "rpc.aggregate": "jira",
+          }),
         [WS_METHODS.jiraGetConfigStatus]: (input) =>
           observeRpcEffect(WS_METHODS.jiraGetConfigStatus, jiraService.getConfigStatus(input.cwd), {
             "rpc.aggregate": "jira",

@@ -1,43 +1,27 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { spawnSync } from "node:child_process";
-
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it, vi } from "vitest";
 import { Cause, Effect, Layer } from "effect";
 
 import { JiraError } from "@t3tools/contracts";
 import { JiraConfig } from "../Services/JiraConfig.ts";
+import { JiraConnectionService } from "../Services/JiraConnectionService.ts";
 import { JiraService } from "../Services/JiraService.ts";
 import { JiraConfigLive } from "./JiraConfig.ts";
+import { JiraConnectionServiceLive } from "./JiraConnectionService";
 import { makeJiraService } from "./JiraService.ts";
+import { ServerSettingsService } from "../../serverSettings";
 
-const jiraConfigTestLayer = Layer.mergeAll(JiraConfigLive, NodeServices.layer);
-
-function runGit(cwd: string, args: readonly string[]) {
-  const result = spawnSync("git", args, {
-    cwd,
-    encoding: "utf8",
-  });
-
-  if (result.status === 0) {
-    return result.stdout.trim();
-  }
-
-  throw new Error(result.stderr.trim() || `git ${args.join(" ")} failed`);
-}
-
-function createCommittedRepo(prefix: string) {
-  const repoRoot = mkdtempSync(path.join(tmpdir(), prefix));
-  runGit(repoRoot, ["init", "--initial-branch=main"]);
-  runGit(repoRoot, ["config", "user.email", "test@example.com"]);
-  runGit(repoRoot, ["config", "user.name", "Test User"]);
-  writeFileSync(path.join(repoRoot, "README.md"), "hello\n");
-  runGit(repoRoot, ["add", "README.md"]);
-  runGit(repoRoot, ["commit", "-m", "Initial commit"]);
-  return repoRoot;
-}
+const jiraConfigTestLayer = (overrides?: Parameters<typeof ServerSettingsService.layerTest>[0]) =>
+  JiraConfigLive.pipe(
+    Layer.provideMerge(
+      JiraConnectionServiceLive.pipe(
+        Layer.provide(ServerSettingsService.layerTest(overrides)),
+        Layer.provide(NodeServices.layer),
+      ),
+    ),
+    Layer.provideMerge(ServerSettingsService.layerTest(overrides)),
+    Layer.provideMerge(NodeServices.layer),
+  );
 
 const exampleConfig = {
   baseUrl: "https://example.atlassian.net",
@@ -56,75 +40,64 @@ const exampleConfig = {
 };
 
 describe("JiraConfigLive", () => {
-  it("resolves the shared repo config path from a worktree cwd", async () => {
+  it("returns missing when the machine-level Jira connection has not been saved", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
-        const repoRoot = createCommittedRepo("t3-jira-config-repo-");
-        const worktreePath = path.join(tmpdir(), `t3-jira-worktree-${Date.now()}`);
+        const result = yield* Effect.gen(function* () {
+          const jiraConfig = yield* JiraConfig;
+          return yield* jiraConfig.getConfigStatus("/repo/worktree");
+        }).pipe(Effect.provide(jiraConfigTestLayer()));
 
-        try {
-          runGit(repoRoot, ["worktree", "add", worktreePath, "-b", "feature/jira-demo"]);
-          writeFileSync(
-            path.join(repoRoot, ".t3-jira-config.json"),
-            JSON.stringify(exampleConfig, null, 2),
-          );
-
-          const result = yield* Effect.gen(function* () {
-            const jiraConfig = yield* JiraConfig;
-            return yield* jiraConfig.getConfigStatus(worktreePath);
-          }).pipe(Effect.provide(jiraConfigTestLayer));
-
-          expect(result.status).toBe("ready");
-          expect(result.configPath).toMatch(/\.t3-jira-config\.json$/);
-        } finally {
-          rmSync(worktreePath, { recursive: true, force: true });
-          rmSync(repoRoot, { recursive: true, force: true });
-        }
+        expect(result.status).toBe("missing");
+        expect(result.configPath).toContain("jira");
       }),
     );
   });
 
-  it("returns missing when the repo-local config file does not exist", async () => {
+  it("returns ready when the machine-level Jira connection is present", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
-        const repoRoot = createCommittedRepo("t3-jira-config-missing-");
+        const result = yield* Effect.gen(function* () {
+          const jiraConfig = yield* JiraConfig;
+          return yield* jiraConfig.getConfigStatus("/repo/worktree");
+        }).pipe(
+          Effect.provide(
+            jiraConfigTestLayer({
+              jira: {
+                baseUrl: "https://example.atlassian.net",
+                email: "user@example.com",
+                token: "jira-token",
+              },
+            }),
+          ),
+        );
 
-        try {
-          const result = yield* Effect.gen(function* () {
-            const jiraConfig = yield* JiraConfig;
-            return yield* jiraConfig.getConfigStatus(repoRoot);
-          }).pipe(Effect.provide(jiraConfigTestLayer));
-
-          expect(result).toEqual({
-            status: "missing",
-            configPath: path.join(repoRoot, ".t3-jira-config.json"),
-          });
-        } finally {
-          rmSync(repoRoot, { recursive: true, force: true });
-        }
+        expect(result.status).toBe("ready");
+        expect(result.configPath).toContain("jira");
       }),
     );
   });
 
-  it("returns invalid with a parse message when the config file is malformed", async () => {
+  it("returns invalid when the saved machine-level Jira connection is incomplete", async () => {
     await Effect.runPromise(
       Effect.gen(function* () {
-        const repoRoot = createCommittedRepo("t3-jira-config-invalid-");
+        const result = yield* Effect.gen(function* () {
+          const jiraConfig = yield* JiraConfig;
+          return yield* jiraConfig.getConfigStatus("/repo/worktree");
+        }).pipe(
+          Effect.provide(
+            jiraConfigTestLayer({
+              jira: {
+                baseUrl: "https://example.atlassian.net",
+                email: "",
+                token: "jira-token",
+              },
+            }),
+          ),
+        );
 
-        try {
-          writeFileSync(path.join(repoRoot, ".t3-jira-config.json"), "{not-json");
-
-          const result = yield* Effect.gen(function* () {
-            const jiraConfig = yield* JiraConfig;
-            return yield* jiraConfig.getConfigStatus(repoRoot);
-          }).pipe(Effect.provide(jiraConfigTestLayer));
-
-          expect(result.status).toBe("invalid");
-          expect(result.configPath).toBe(path.join(repoRoot, ".t3-jira-config.json"));
-          expect(result.error).toContain("config");
-        } finally {
-          rmSync(repoRoot, { recursive: true, force: true });
-        }
+        expect(result.status).toBe("invalid");
+        expect(result.error).toContain("incomplete");
       }),
     );
   });
@@ -150,6 +123,42 @@ describe("JiraServiceLive", () => {
   ) {
     return makeJiraService({ fetchImplementation }).pipe(
       Layer.provide(configLayer),
+      Layer.provide(
+        Layer.succeed(JiraConnectionService, {
+          getConnectionStatus: () =>
+            Effect.succeed({
+              status: "ready" as const,
+              hasToken: true,
+              baseUrl: resolvedConfig.baseUrl,
+              email: resolvedConfig.email,
+              defaults: {},
+            }),
+          saveConnection: () =>
+            Effect.succeed({
+              status: "ready" as const,
+              hasToken: true,
+              baseUrl: resolvedConfig.baseUrl,
+              email: resolvedConfig.email,
+              defaults: {},
+            }),
+          testConnection: () =>
+            Effect.succeed({
+              status: "ready" as const,
+              hasToken: true,
+              baseUrl: resolvedConfig.baseUrl,
+              email: resolvedConfig.email,
+              defaults: {},
+            }),
+          disconnect: () => Effect.succeed({ disconnected: true as const }),
+          getResolvedConnection: () =>
+            Effect.succeed({
+              baseUrl: resolvedConfig.baseUrl,
+              email: resolvedConfig.email,
+              token: resolvedConfig.token,
+              defaults: {},
+            }),
+        }),
+      ),
       Layer.provide(NodeServices.layer),
     );
   }
@@ -679,6 +688,42 @@ describe("JiraServiceLive", () => {
           Effect.provide(
             makeJiraService({ fetchImplementation: fetchSpy }).pipe(
               Layer.provide(disabledConfigLayer),
+              Layer.provide(
+                Layer.succeed(JiraConnectionService, {
+                  getConnectionStatus: () =>
+                    Effect.succeed({
+                      status: "ready" as const,
+                      hasToken: true,
+                      baseUrl: resolvedConfig.baseUrl,
+                      email: resolvedConfig.email,
+                      defaults: {},
+                    }),
+                  saveConnection: () =>
+                    Effect.succeed({
+                      status: "ready" as const,
+                      hasToken: true,
+                      baseUrl: resolvedConfig.baseUrl,
+                      email: resolvedConfig.email,
+                      defaults: {},
+                    }),
+                  testConnection: () =>
+                    Effect.succeed({
+                      status: "ready" as const,
+                      hasToken: true,
+                      baseUrl: resolvedConfig.baseUrl,
+                      email: resolvedConfig.email,
+                      defaults: {},
+                    }),
+                  disconnect: () => Effect.succeed({ disconnected: true as const }),
+                  getResolvedConnection: () =>
+                    Effect.succeed({
+                      baseUrl: resolvedConfig.baseUrl,
+                      email: resolvedConfig.email,
+                      token: resolvedConfig.token,
+                      defaults: {},
+                    }),
+                }),
+              ),
               Layer.provide(NodeServices.layer),
             ),
           ),

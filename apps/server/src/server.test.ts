@@ -406,6 +406,29 @@ const buildAppUnderTest = (options?: {
       ),
       Layer.provide(
         Layer.mock(JiraService)({
+          getConnectionStatus: () =>
+            Effect.succeed({
+              status: "missing",
+              hasToken: false,
+              defaults: {},
+            }),
+          saveConnection: (input) =>
+            Effect.succeed({
+              status: "ready",
+              hasToken: true,
+              baseUrl: input.baseUrl,
+              email: input.email,
+              defaults: input.defaults ?? {},
+            }),
+          testConnection: (input) =>
+            Effect.succeed({
+              status: "ready",
+              hasToken: true,
+              baseUrl: input.baseUrl,
+              email: input.email,
+              defaults: input.defaults ?? {},
+            }),
+          disconnect: () => Effect.succeed({ disconnected: true }),
           getConfigStatus: () =>
             Effect.succeed({
               status: "missing",
@@ -2413,6 +2436,41 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
       assert.equal(jiraConfigStatus.status, "missing");
+
+      const jiraConnectionStatus = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.jiraGetConnectionStatus]({})),
+      );
+      assert.equal(jiraConnectionStatus.status, "missing");
+
+      const jiraTestConnection = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraTestConnection]({
+            baseUrl: "https://example.atlassian.net",
+            email: "user@example.com",
+            token: "jira-token",
+          }),
+        ),
+      );
+      assert.equal(jiraTestConnection.status, "ready");
+
+      const jiraSavedConnection = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraSaveConnection]({
+            baseUrl: "https://example.atlassian.net",
+            email: "user@example.com",
+            token: "jira-token",
+            defaults: {
+              projectKey: "WEB",
+            },
+          }),
+        ),
+      );
+      assert.equal(jiraSavedConnection.status, "ready");
+
+      const jiraDisconnect = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.jiraDisconnect]({})),
+      );
+      assert.equal(jiraDisconnect.disconnected, true);
 
       const jiraTasks = yield* Effect.scoped(
         withWsRpcClient(wsUrl, (client) =>
