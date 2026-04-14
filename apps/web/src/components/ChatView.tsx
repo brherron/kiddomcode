@@ -191,7 +191,7 @@ import {
 import type { JiraWorkActionOption } from "~/lib/jiraWorkActions";
 import { useJiraToolsStore } from "~/jiraToolsStore";
 import { toggleToolsPanelTarget, type ToolsPanelRouteState } from "~/toolsPanelState";
-import { RightPanel } from "./right-panel/RightPanel";
+import { PlanSidebar } from "./PlanSidebar";
 import { JiraConnectionModal } from "./jira/JiraConnectionModal";
 
 const IMAGE_ONLY_BOOTSTRAP_PROMPT =
@@ -1134,6 +1134,7 @@ export default function ChatView(props: ChatViewProps) {
     [activeLatestTurn?.turnId, threadActivities],
   );
   const planSidebarOpen = planPanelOpen;
+  const planSidebarLabel = sidebarProposedPlan || interactionMode === "plan" ? "Plan" : "Tasks";
   const showPlanFollowUpPrompt =
     pendingUserInputs.length === 0 &&
     interactionMode === "plan" &&
@@ -2080,6 +2081,18 @@ export default function ChatView(props: ChatViewProps) {
     }
     planSidebarDismissedForTurnRef.current = null;
   }, [activeThread?.id]);
+
+  // Auto-open the plan sidebar when plan/todo steps arrive for the current turn.
+  // Don't auto-open for plans carried over from a previous turn (the user can open manually).
+  useEffect(() => {
+    if (!activePlan) return;
+    if (planSidebarOpen) return;
+    const latestTurnId = activeLatestTurn?.turnId ?? null;
+    if (latestTurnId && activePlan.turnId !== latestTurnId) return;
+    const turnKey = activePlan.turnId ?? sidebarProposedPlan?.turnId ?? "__dismissed__";
+    if (planSidebarDismissedForTurnRef.current === turnKey) return;
+    setPlanPanelOpen(true);
+  }, [activePlan, activeLatestTurn?.turnId, planSidebarOpen, sidebarProposedPlan?.turnId]);
 
   useEffect(() => {
     setIsRevertingCheckpoint(false);
@@ -3603,6 +3616,7 @@ export default function ChatView(props: ChatViewProps) {
               activeProposedPlan={activeProposedPlan}
               activePlan={activePlan as { turnId?: TurnId } | null}
               sidebarProposedPlan={sidebarProposedPlan as { turnId?: TurnId } | null}
+              planSidebarLabel={planSidebarLabel}
               planSidebarOpen={planSidebarOpen}
               runtimeMode={runtimeMode}
               interactionMode={interactionMode}
@@ -3687,23 +3701,15 @@ export default function ChatView(props: ChatViewProps) {
         {/* end chat column */}
 
         {planSidebarOpen ? (
-          <RightPanel
-            tab="plan"
-            onTabChange={() => {}}
-            onClose={closePlanPanel}
+          <PlanSidebar
+            activePlan={activePlan}
+            activeProposedPlan={sidebarProposedPlan}
+            label={planSidebarLabel}
             environmentId={environmentId}
             markdownCwd={gitCwd ?? undefined}
             workspaceRoot={activeWorkspaceRoot}
             timestampFormat={timestampFormat}
-            activePlan={activePlan}
-            activeProposedPlan={sidebarProposedPlan}
-            jiraCwd={null}
-            selectedIssueKey={null}
-            onSelectIssueKey={() => {}}
-            onRunAction={() => {}}
-            currentBranch={null}
-            hasGitRepo={false}
-            isWorking={false}
+            onClose={closePlanPanel}
           />
         ) : null}
       </div>
