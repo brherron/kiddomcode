@@ -5,7 +5,11 @@ import * as RpcGroup from "effect/unstable/rpc/RpcGroup";
 import { OpenError, OpenInEditorInput } from "./editor";
 import {
   JiraConfigStatusResult,
+  JiraConnectionStatusResult,
+  JiraDisconnectInput,
+  JiraDisconnectResult,
   JiraError,
+  JiraGetConnectionStatusInput,
   JiraGetConfigStatusInput,
   JiraGetIssueDetailInput,
   JiraGetIssueDetailResult,
@@ -13,6 +17,8 @@ import {
   JiraListActiveTasksResult,
   JiraRunAutomationInput,
   JiraRunAutomationResult,
+  JiraSaveConnectionInput,
+  JiraTestConnectionInput,
 } from "./jira";
 import { AuthAccessStreamEvent } from "./auth";
 import {
@@ -106,6 +112,10 @@ export const WS_METHODS = {
   gitInit: "git.init",
   gitResolvePullRequest: "git.resolvePullRequest",
   gitPreparePullRequestThread: "git.preparePullRequestThread",
+  jiraGetConnectionStatus: "jira.getConnectionStatus",
+  jiraSaveConnection: "jira.saveConnection",
+  jiraTestConnection: "jira.testConnection",
+  jiraDisconnect: "jira.disconnect",
   jiraGetConfigStatus: "jira.getConfigStatus",
   jiraListActiveTasks: "jira.listActiveTasks",
   jiraGetIssueDetail: "jira.getIssueDetail",
@@ -258,6 +268,30 @@ export const WsJiraGetConfigStatusRpc = Rpc.make(WS_METHODS.jiraGetConfigStatus,
   error: JiraError,
 });
 
+export const WsJiraGetConnectionStatusRpc = Rpc.make(WS_METHODS.jiraGetConnectionStatus, {
+  payload: JiraGetConnectionStatusInput,
+  success: JiraConnectionStatusResult,
+  error: JiraError,
+});
+
+export const WsJiraSaveConnectionRpc = Rpc.make(WS_METHODS.jiraSaveConnection, {
+  payload: JiraSaveConnectionInput,
+  success: JiraConnectionStatusResult,
+  error: JiraError,
+});
+
+export const WsJiraTestConnectionRpc = Rpc.make(WS_METHODS.jiraTestConnection, {
+  payload: JiraTestConnectionInput,
+  success: JiraConnectionStatusResult,
+  error: JiraError,
+});
+
+export const WsJiraDisconnectRpc = Rpc.make(WS_METHODS.jiraDisconnect, {
+  payload: JiraDisconnectInput,
+  success: JiraDisconnectResult,
+  error: JiraError,
+});
+
 export const WsJiraListActiveTasksRpc = Rpc.make(WS_METHODS.jiraListActiveTasks, {
   payload: JiraListActiveTasksInput,
   success: JiraListActiveTasksResult,
@@ -401,6 +435,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsGitCreateBranchRpc,
   WsGitCheckoutRpc,
   WsGitInitRpc,
+  WsJiraGetConnectionStatusRpc,
+  WsJiraSaveConnectionRpc,
+  WsJiraTestConnectionRpc,
+  WsJiraDisconnectRpc,
   WsJiraGetConfigStatusRpc,
   WsJiraListActiveTasksRpc,
   WsJiraGetIssueDetailRpc,

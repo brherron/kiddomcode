@@ -20,6 +20,10 @@ import type {
 } from "./git";
 import type {
   JiraConfigStatusResult,
+  JiraConnectionStatusResult,
+  JiraDisconnectInput,
+  JiraDisconnectResult,
+  JiraGetConnectionStatusInput,
   JiraGetConfigStatusInput,
   JiraGetIssueDetailInput,
   JiraGetIssueDetailResult,
@@ -27,6 +31,8 @@ import type {
   JiraListActiveTasksResult,
   JiraRunAutomationInput,
   JiraRunAutomationResult,
+  JiraSaveConnectionInput,
+  JiraTestConnectionInput,
 } from "./jira";
 import type {
   ProjectSearchEntriesInput,
@@ -212,6 +218,12 @@ export interface LocalApi {
     upsertKeybinding: (input: ServerUpsertKeybindingInput) => Promise<ServerUpsertKeybindingResult>;
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
+    getJiraConnectionStatus: (
+      input: JiraGetConnectionStatusInput,
+    ) => Promise<JiraConnectionStatusResult>;
+    saveJiraConnection: (input: JiraSaveConnectionInput) => Promise<JiraConnectionStatusResult>;
+    testJiraConnection: (input: JiraTestConnectionInput) => Promise<JiraConnectionStatusResult>;
+    disconnectJira: (input: JiraDisconnectInput) => Promise<JiraDisconnectResult>;
   };
 }
 

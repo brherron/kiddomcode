@@ -1,6 +1,6 @@
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 
-import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas";
+import { PositiveInt, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas";
 
 export const JiraAutomationKind = Schema.Literals(["on_branch_created", "on_pr_opened"]);
 export type JiraAutomationKind = typeof JiraAutomationKind.Type;
@@ -11,6 +11,43 @@ export const JiraConfigStatusResult = Schema.Struct({
   error: Schema.optional(TrimmedNonEmptyString),
 });
 export type JiraConfigStatusResult = typeof JiraConfigStatusResult.Type;
+
+export const JiraConnectionDefaults = Schema.Struct({
+  projectKey: Schema.optionalKey(TrimmedNonEmptyString),
+  boardId: Schema.optionalKey(TrimmedNonEmptyString),
+  filterId: Schema.optionalKey(TrimmedNonEmptyString),
+  jql: Schema.optionalKey(TrimmedNonEmptyString),
+});
+export type JiraConnectionDefaults = typeof JiraConnectionDefaults.Type;
+
+export const JiraConnectionSettings = Schema.Struct({
+  baseUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  email: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  token: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
+  defaults: JiraConnectionDefaults.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+});
+export type JiraConnectionSettings = typeof JiraConnectionSettings.Type;
+
+export const JiraConnectionStatus = Schema.Literals([
+  "missing",
+  "ready",
+  "invalid_auth",
+  "unreachable",
+  "invalid_config",
+]);
+export type JiraConnectionStatus = typeof JiraConnectionStatus.Type;
+
+export const JiraConnectionStatusResult = Schema.Struct({
+  status: JiraConnectionStatus,
+  hasToken: Schema.Boolean,
+  baseUrl: Schema.optional(TrimmedNonEmptyString),
+  email: Schema.optional(TrimmedNonEmptyString),
+  defaults: JiraConnectionDefaults,
+  lastValidatedAt: Schema.optional(Schema.String),
+  updatedAt: Schema.optional(Schema.String),
+  error: Schema.optional(TrimmedNonEmptyString),
+});
+export type JiraConnectionStatusResult = typeof JiraConnectionStatusResult.Type;
 
 export const JiraIssueSummary = Schema.Struct({
   key: TrimmedNonEmptyString,
@@ -63,6 +100,28 @@ export const JiraGetConfigStatusInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
 });
 export type JiraGetConfigStatusInput = typeof JiraGetConfigStatusInput.Type;
+
+export const JiraGetConnectionStatusInput = Schema.Struct({});
+export type JiraGetConnectionStatusInput = typeof JiraGetConnectionStatusInput.Type;
+
+export const JiraSaveConnectionInput = Schema.Struct({
+  baseUrl: TrimmedNonEmptyString,
+  email: TrimmedNonEmptyString,
+  token: TrimmedNonEmptyString,
+  defaults: Schema.optionalKey(JiraConnectionDefaults),
+});
+export type JiraSaveConnectionInput = typeof JiraSaveConnectionInput.Type;
+
+export const JiraTestConnectionInput = JiraSaveConnectionInput;
+export type JiraTestConnectionInput = typeof JiraTestConnectionInput.Type;
+
+export const JiraDisconnectInput = Schema.Struct({});
+export type JiraDisconnectInput = typeof JiraDisconnectInput.Type;
+
+export const JiraDisconnectResult = Schema.Struct({
+  disconnected: Schema.Boolean,
+});
+export type JiraDisconnectResult = typeof JiraDisconnectResult.Type;
 
 export const JiraListActiveTasksInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,

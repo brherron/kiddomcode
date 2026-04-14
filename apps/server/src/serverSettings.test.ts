@@ -209,6 +209,43 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("deep merges jira settings updates without dropping saved defaults", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsService;
+
+      yield* serverSettings.updateSettings({
+        jira: {
+          baseUrl: "https://example.atlassian.net",
+          email: "user@example.com",
+          token: "jira-token",
+          defaults: {
+            projectKey: "WEB",
+            filterId: "10010",
+          },
+        },
+      });
+
+      const next = yield* serverSettings.updateSettings({
+        jira: {
+          defaults: {
+            boardId: "23",
+          },
+        },
+      });
+
+      assert.deepEqual(next.jira, {
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        token: "jira-token",
+        defaults: {
+          projectKey: "WEB",
+          filterId: "10010",
+          boardId: "23",
+        },
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("writes only non-default server settings to disk", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsService;
@@ -224,9 +261,18 @@ it.layer(NodeServices.layer)("server settings", (it) => {
             binaryPath: "/opt/homebrew/bin/codex",
           },
         },
+        jira: {
+          baseUrl: "https://example.atlassian.net",
+          email: "user@example.com",
+          token: "jira-token",
+          defaults: {
+            projectKey: "WEB",
+          },
+        },
       });
 
       assert.equal(next.providers.codex.binaryPath, "/opt/homebrew/bin/codex");
+      assert.equal(next.jira.baseUrl, "https://example.atlassian.net");
 
       const raw = yield* fileSystem.readFileString(serverConfig.settingsPath);
       assert.deepEqual(JSON.parse(raw), {
@@ -237,6 +283,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         providers: {
           codex: {
             binaryPath: "/opt/homebrew/bin/codex",
+          },
+        },
+        jira: {
+          baseUrl: "https://example.atlassian.net",
+          email: "user@example.com",
+          token: "jira-token",
+          defaults: {
+            projectKey: "WEB",
           },
         },
       });
