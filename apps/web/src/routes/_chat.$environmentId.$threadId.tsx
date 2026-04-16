@@ -1,5 +1,5 @@
 import { createFileRoute, retainSearchParams, useNavigate } from "@tanstack/react-router";
-import { Suspense, lazy, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 
 import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
@@ -19,6 +19,7 @@ import {
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useJiraToolsStore } from "../jiraToolsStore";
+import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import {
@@ -27,11 +28,10 @@ import {
   type ToolsPanelRouteState,
 } from "../toolsPanelState";
 import { resolveThreadRouteRef, buildThreadRouteParams } from "../threadRoutes";
-import { Sheet, SheetPopup } from "../components/ui/sheet";
+import { RightPanelSheet } from "../components/RightPanelSheet";
 import { Sidebar, SidebarInset, SidebarProvider, SidebarRail } from "~/components/ui/sidebar";
 
 const DiffPanel = lazy(() => import("../components/DiffPanel"));
-const DIFF_INLINE_LAYOUT_MEDIA_QUERY = "(max-width: 1180px)";
 const DIFF_INLINE_SIDEBAR_WIDTH_STORAGE_KEY = "chat_diff_sidebar_width";
 const DIFF_INLINE_DEFAULT_WIDTH = "450px";
 const DIFF_INLINE_SIDEBAR_MIN_WIDTH = 26 * 16;
@@ -58,6 +58,7 @@ const DiffPanelSheet = (props: { children: ReactNode; open: boolean; onClose: ()
     </Sheet>
   );
 };
+
 
 const DiffLoadingFallback = (props: { mode: DiffPanelMode }) => {
   return (
