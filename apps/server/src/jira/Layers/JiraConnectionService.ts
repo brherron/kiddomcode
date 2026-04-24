@@ -2,8 +2,16 @@ import { Buffer } from "node:buffer";
 
 import { Effect, Layer } from "effect";
 
-import { JiraError, type JiraConnectionDefaults } from "@t3tools/contracts";
-import { JiraConnectionService, type ResolvedJiraConnection } from "../Services/JiraConnectionService";
+import {
+  JiraError,
+  ServerSettingsError,
+  type JiraConnectionDefaults,
+  type ServerSettings,
+} from "@t3tools/contracts";
+import {
+  JiraConnectionService,
+  type ResolvedJiraConnection,
+} from "../Services/JiraConnectionService";
 import { ServerSettingsService } from "../../serverSettings";
 
 type JiraFetchImplementation = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -18,6 +26,20 @@ function normalizeBaseUrl(input: string): string {
 
 function buildAuthHeader(email: string, token: string): string {
   return `Basic ${Buffer.from(`${email}:${token}`).toString("base64")}`;
+}
+
+function mapServerSettingsError(operation: string) {
+  return (error: ServerSettingsError) =>
+    new JiraError({
+      kind: "config",
+      operation,
+      message: error.message,
+      cause: error,
+    });
+}
+
+function isJiraError(cause: unknown): cause is JiraError {
+  return cause instanceof Error && "_tag" in cause && cause._tag === "JiraError";
 }
 
 function mapStatusFromSettings(input: {
@@ -65,28 +87,38 @@ export const makeJiraConnectionService = (options?: {
       const fetchImplementation: JiraFetchImplementation =
         options?.fetchImplementation ?? ((input, init) => globalThis.fetch(input, init));
 
-      const toResolvedConnection = (
-        input: Awaited<ReturnType<typeof serverSettings.getSettings>>["jira"],
-      ): ResolvedJiraConnection => {
-        const normalized = mapStatusFromSettings(input);
-        if (normalized.status !== "ready") {
-          throw new JiraError({
-            kind: "config",
-            operation: "jira.connection.resolve",
-            message:
-              normalized.status === "missing"
-                ? "Jira is not connected."
-                : normalized.error ?? "Saved Jira settings are invalid.",
-          });
-        }
+      const toResolvedConnection = (input: ServerSettings["jira"]) =>
+        Effect.try({
+          try: (): ResolvedJiraConnection => {
+            const normalized = mapStatusFromSettings(input);
+            if (normalized.status !== "ready") {
+              throw new JiraError({
+                kind: "config",
+                operation: "jira.connection.resolve",
+                message:
+                  normalized.status === "missing"
+                    ? "Jira is not connected."
+                    : (normalized.error ?? "Saved Jira settings are invalid."),
+              });
+            }
 
-        return {
-          baseUrl: normalizeBaseUrl(input.baseUrl),
-          email: input.email.trim(),
-          token: input.token.trim(),
-          defaults: input.defaults,
-        };
-      };
+            return {
+              baseUrl: normalizeBaseUrl(input.baseUrl),
+              email: input.email.trim(),
+              token: input.token.trim(),
+              defaults: input.defaults,
+            };
+          },
+          catch: (cause) =>
+            isJiraError(cause)
+              ? cause
+              : new JiraError({
+                  kind: "config",
+                  operation: "jira.connection.resolve",
+                  message: "Saved Jira settings are invalid.",
+                  cause,
+                }),
+        });
 
       const testResolvedConnection = Effect.fn("JiraConnectionService.testResolvedConnection")(
         function* (connection: ResolvedJiraConnection) {
@@ -160,11 +192,12 @@ export const makeJiraConnectionService = (options?: {
         getConnectionStatus: () =>
           serverSettings.getSettings.pipe(
             Effect.map((settings) => mapStatusFromSettings(settings.jira)),
+            Effect.mapError(mapServerSettingsError("jira.connection.status")),
           ),
         getResolvedConnection: () =>
           serverSettings.getSettings.pipe(
-            Effect.map((settings) => settings.jira),
-            Effect.map(toResolvedConnection),
+            Effect.mapError(mapServerSettingsError("jira.connection.resolve")),
+            Effect.flatMap((settings) => toResolvedConnection(settings.jira)),
           ),
         testConnection: (input) =>
           Effect.try({
@@ -182,6 +215,7 @@ export const makeJiraConnectionService = (options?: {
                 cause,
               }),
           }).pipe(
+            Effect.flatMap(testResolvedConnection),
             Effect.catchTag("JiraError", (error) =>
               Effect.succeed({
                 status: "invalid_config" as const,
@@ -192,37 +226,51 @@ export const makeJiraConnectionService = (options?: {
                 error: error.message,
               }),
             ),
-            Effect.flatMap(testResolvedConnection),
           ),
         saveConnection: (input) =>
-          Effect.gen(function* () {
-            const tested = yield* testResolvedConnection({
+          Effect.try({
+            try: () => ({
               baseUrl: normalizeBaseUrl(input.baseUrl),
               email: input.email.trim(),
               token: input.token.trim(),
               defaults: input.defaults ?? {},
-            });
+            }),
+            catch: (cause) =>
+              new JiraError({
+                kind: "config",
+                operation: "jira.connection.save",
+                message: "Invalid Jira base URL.",
+                cause,
+              }),
+          }).pipe(
+            Effect.flatMap((connection) =>
+              Effect.gen(function* () {
+                const tested = yield* testResolvedConnection(connection);
 
-            yield* serverSettings.updateSettings({
-              jira: {
-                baseUrl: normalizeBaseUrl(input.baseUrl),
-                email: input.email.trim(),
-                token: input.token.trim(),
-                defaults: input.defaults ?? {},
-              },
-            });
+                yield* serverSettings
+                  .updateSettings({
+                    jira: connection,
+                  })
+                  .pipe(Effect.mapError(mapServerSettingsError("jira.connection.save")));
 
-            return tested;
-          }),
+                return tested;
+              }),
+            ),
+          ),
         disconnect: () =>
-          serverSettings.updateSettings({
-            jira: {
-              baseUrl: "",
-              email: "",
-              token: "",
-              defaults: {},
-            },
-          }).pipe(Effect.as({ disconnected: true as const })),
+          serverSettings
+            .updateSettings({
+              jira: {
+                baseUrl: "",
+                email: "",
+                token: "",
+                defaults: {},
+              },
+            })
+            .pipe(
+              Effect.mapError(mapServerSettingsError("jira.connection.disconnect")),
+              Effect.as({ disconnected: true as const }),
+            ),
       };
     }),
   );

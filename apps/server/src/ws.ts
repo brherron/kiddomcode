@@ -890,6 +890,22 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
           observeRpcEffect(WS_METHODS.jiraGetConfigStatus, jiraService.getConfigStatus(input.cwd), {
             "rpc.aggregate": "jira",
           }),
+        [WS_METHODS.jiraGetIssueEditMetadata]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraGetIssueEditMetadata,
+            jiraService.getIssueEditMetadata(input),
+            {
+              "rpc.aggregate": "jira",
+            },
+          ),
+        [WS_METHODS.jiraGetIssueTransitions]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraGetIssueTransitions,
+            jiraService.getIssueTransitions(input.cwd, input.issueKey),
+            {
+              "rpc.aggregate": "jira",
+            },
+          ),
         [WS_METHODS.jiraListActiveTasks]: (input) =>
           observeRpcEffect(
             WS_METHODS.jiraListActiveTasks,
@@ -912,6 +928,18 @@ const makeWsRpcLayer = (currentSessionId: AuthSessionId) =>
             WS_METHODS.jiraGetIssueDetail,
             jiraService.getIssueDetail(input.cwd, input.issueKey),
             { "rpc.aggregate": "jira" },
+          ),
+        [WS_METHODS.jiraUpdateIssueStatus]: (input) =>
+          observeRpcEffect(WS_METHODS.jiraUpdateIssueStatus, jiraService.updateIssueStatus(input), {
+            "rpc.aggregate": "jira",
+          }),
+        [WS_METHODS.jiraUpdateIssueStoryPoints]: (input) =>
+          observeRpcEffect(
+            WS_METHODS.jiraUpdateIssueStoryPoints,
+            jiraService.updateIssueStoryPoints(input),
+            {
+              "rpc.aggregate": "jira",
+            },
           ),
         [WS_METHODS.jiraRunAutomation]: (input) =>
           observeRpcEffect(WS_METHODS.jiraRunAutomation, jiraService.runAutomation(input), {

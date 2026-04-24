@@ -25,12 +25,19 @@ import type {
   JiraDisconnectResult,
   JiraGetConnectionStatusInput,
   JiraGetConfigStatusInput,
+  JiraGetIssueEditMetadataInput,
+  JiraIssueEditMetadataResult,
+  JiraIssueTransitionsResult,
   JiraGetIssueDetailInput,
   JiraGetIssueDetailResult,
   JiraListActiveTasksInput,
   JiraListActiveTasksResult,
   JiraRunAutomationInput,
   JiraRunAutomationResult,
+  JiraUpdateIssueStatusInput,
+  JiraUpdateIssueStatusResult,
+  JiraUpdateIssueStoryPointsInput,
+  JiraUpdateIssueStoryPointsResult,
   JiraSaveConnectionInput,
   JiraTestConnectionInput,
 } from "./jira";
@@ -219,11 +226,11 @@ export interface LocalApi {
     getSettings: () => Promise<ServerSettings>;
     updateSettings: (patch: ServerSettingsPatch) => Promise<ServerSettings>;
     getJiraConnectionStatus: (
-      input: JiraGetConnectionStatusInput,
+      input?: JiraGetConnectionStatusInput,
     ) => Promise<JiraConnectionStatusResult>;
     saveJiraConnection: (input: JiraSaveConnectionInput) => Promise<JiraConnectionStatusResult>;
     testJiraConnection: (input: JiraTestConnectionInput) => Promise<JiraConnectionStatusResult>;
-    disconnectJira: (input: JiraDisconnectInput) => Promise<JiraDisconnectResult>;
+    disconnectJira: (input?: JiraDisconnectInput) => Promise<JiraDisconnectResult>;
   };
 }
 
@@ -275,6 +282,14 @@ export interface EnvironmentApi {
     getConfigStatus: (input: JiraGetConfigStatusInput) => Promise<JiraConfigStatusResult>;
     listActiveTasks: (input: JiraListActiveTasksInput) => Promise<JiraListActiveTasksResult>;
     getIssueDetail: (input: JiraGetIssueDetailInput) => Promise<JiraGetIssueDetailResult>;
+    getIssueEditMetadata: (
+      input: JiraGetIssueEditMetadataInput,
+    ) => Promise<JiraIssueEditMetadataResult>;
+    getIssueTransitions: (input: JiraGetIssueDetailInput) => Promise<JiraIssueTransitionsResult>;
+    updateIssueStatus: (input: JiraUpdateIssueStatusInput) => Promise<JiraUpdateIssueStatusResult>;
+    updateIssueStoryPoints: (
+      input: JiraUpdateIssueStoryPointsInput,
+    ) => Promise<JiraUpdateIssueStoryPointsResult>;
     runAutomation: (input: JiraRunAutomationInput) => Promise<JiraRunAutomationResult>;
   };
   orchestration: {

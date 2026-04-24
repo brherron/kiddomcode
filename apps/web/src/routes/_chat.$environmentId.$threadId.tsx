@@ -19,7 +19,7 @@ import {
 } from "../diffRouteSearch";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useJiraToolsStore } from "../jiraToolsStore";
-import { selectEnvironmentState, selectThreadByRef, selectThreadExistsByRef, useStore } from "../store";
+import { selectEnvironmentState, selectThreadExistsByRef, useStore } from "../store";
 import { createThreadSelectorByRef } from "../storeSelectors";
 import {
   closeToolsPanel,

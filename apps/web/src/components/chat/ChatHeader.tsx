@@ -188,18 +188,13 @@ export const ChatHeader = memo(function ChatHeader({
                 aria-label="Jira"
                 variant="outline"
                 size="xs"
-                disabled={!activeProjectName}
               >
                 <JiraHeaderIcon />
                 <span>Jira</span>
               </Toggle>
             }
           />
-          <TooltipPopup side="bottom">
-            {!activeProjectName
-              ? "Jira is unavailable until this thread has an active project."
-              : "Toggle Jira panel"}
-          </TooltipPopup>
+          <TooltipPopup side="bottom">Toggle Jira panel</TooltipPopup>
         </Tooltip>
       </div>
     </div>

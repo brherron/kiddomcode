@@ -12,6 +12,8 @@ import {
   type ServerConfig,
 } from "@t3tools/contracts";
 import { DateTime } from "effect";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { page } from "vitest/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "vitest-browser-react";
@@ -128,8 +130,28 @@ vi.mock("../../environments/runtime", () => {
     environmentId: EnvironmentId.make("environment-local"),
     client: {
       server: {
+        getJiraConnectionStatus: vi.fn().mockResolvedValue({
+          status: "missing",
+          hasToken: false,
+          defaults: {},
+        }),
+        saveJiraConnection: vi.fn().mockResolvedValue({
+          status: "ready",
+          hasToken: true,
+          baseUrl: "https://example.atlassian.net",
+          email: "user@example.com",
+          defaults: {},
+        }),
         subscribeAuthAccess: (listener: Parameters<typeof authAccessHarness.subscribe>[0]) =>
           authAccessHarness.subscribe(listener),
+        testJiraConnection: vi.fn().mockResolvedValue({
+          status: "ready",
+          hasToken: true,
+          baseUrl: "https://example.atlassian.net",
+          email: "user@example.com",
+          defaults: {},
+        }),
+        disconnectJira: vi.fn().mockResolvedValue({ disconnected: true }),
       },
     },
     ensureBootstrapped: async () => undefined,
@@ -253,6 +275,14 @@ function makeClientSession(input: {
         ? null
         : makeUtc(input.lastConnectedAt),
   };
+}
+
+function renderWithQueryClient(node: ReactNode) {
+  return (
+    <QueryClientProvider client={new QueryClient()}>
+      <AppAtomRegistryProvider>{node}</AppAtomRegistryProvider>
+    </QueryClientProvider>
+  );
 }
 
 const createDesktopBridgeStub = (overrides?: {
@@ -397,11 +427,7 @@ describe("GeneralSettingsPanel observability", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <ConnectionsSettings />
-      </AppAtomRegistryProvider>,
-    );
+    mounted = await render(renderWithQueryClient(<ConnectionsSettings />));
 
     await expect.element(page.getByText("Manage local backend")).toBeInTheDocument();
     await expect.element(page.getByLabelText("Enable network access")).toBeDisabled();
@@ -536,11 +562,7 @@ describe("GeneralSettingsPanel observability", () => {
 
     setServerConfigSnapshot(createBaseServerConfig());
 
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <ConnectionsSettings />
-      </AppAtomRegistryProvider>,
-    );
+    mounted = await render(renderWithQueryClient(<ConnectionsSettings />));
 
     await expect.element(page.getByText("Authorized clients")).toBeInTheDocument();
     await expect.element(page.getByText("Revoke others")).toBeInTheDocument();
@@ -629,11 +651,7 @@ describe("GeneralSettingsPanel observability", () => {
 
     setServerConfigSnapshot(createBaseServerConfig());
 
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <ConnectionsSettings />
-      </AppAtomRegistryProvider>,
-    );
+    mounted = await render(renderWithQueryClient(<ConnectionsSettings />));
 
     await expect.element(page.getByText("Julius iPhone")).toBeInTheDocument();
     await page.getByRole("button", { name: "Revoke others", exact: true }).click();
@@ -648,11 +666,7 @@ describe("GeneralSettingsPanel observability", () => {
 
     setServerConfigSnapshot(createBaseServerConfig());
 
-    mounted = await render(
-      <AppAtomRegistryProvider>
-        <ConnectionsSettings />
-      </AppAtomRegistryProvider>,
-    );
+    mounted = await render(renderWithQueryClient(<ConnectionsSettings />));
 
     const networkAccessToggle = page.getByLabelText("Enable network access");
     await expect.element(networkAccessToggle).not.toBeDisabled();

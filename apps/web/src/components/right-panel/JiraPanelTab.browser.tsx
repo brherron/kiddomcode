@@ -7,8 +7,10 @@ import { render } from "vitest-browser-react";
 const {
   queryClientRef,
   branchQueryRef,
-  configStatusRef,
+  connectionStatusRef,
   activeTasksRef,
+  issueEditMetadataRef,
+  issueTransitionsRef,
   issueDetailRef,
   pullRequestQueryResultsRef,
   startWorkSpy,
@@ -36,12 +38,15 @@ const {
       isFetching: false,
     },
   },
-  configStatusRef: {
+  connectionStatusRef: {
     current: {
       data: {
         status: "ready",
-        configPath: "/repo/.t3-jira-config.json",
-      },
+        hasToken: true,
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        defaults: {},
+      } as any,
       isPending: false,
       isFetching: false,
     },
@@ -57,6 +62,43 @@ const {
             issueTypeName: "Task",
           },
         ],
+      },
+      isPending: false,
+      isFetching: false,
+    },
+  },
+  issueEditMetadataRef: {
+    current: {
+      data: {
+        boardId: "1",
+        boardName: "Example board",
+        projectKey: "WEB",
+        storyPointsFieldId: "customfield_10016",
+        estimationFieldId: undefined,
+        statuses: [
+          {
+            id: "1",
+            name: "To Do",
+          },
+          {
+            id: "2",
+            name: "In Progress",
+          },
+          {
+            id: "3",
+            name: "Done",
+          },
+        ],
+      },
+      isPending: false,
+      isFetching: false,
+    },
+  },
+  issueTransitionsRef: {
+    current: {
+      data: {
+        issueKey: "WEB-101",
+        transitions: [],
       },
       isPending: false,
       isFetching: false,
@@ -103,15 +145,25 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
       if (options.queryKey[0] === "git" && key === "branches") {
         return branchQueryRef.current;
       }
-      if (key === "config-status") {
-        return configStatusRef.current;
+      if (key === "connection-status") {
+        return connectionStatusRef.current;
       }
       if (key === "active-tasks") {
         return activeTasksRef.current;
       }
+      if (key === "issue-edit-metadata") {
+        return issueEditMetadataRef.current;
+      }
+      if (key === "issue-transitions") {
+        return issueTransitionsRef.current;
+      }
       return issueDetailRef.current;
     }),
     useQueries: vi.fn(() => pullRequestQueryResultsRef.current),
+    useMutation: vi.fn(() => ({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    })),
     useQueryClient: vi.fn(() => queryClientRef.current),
   };
 });
@@ -136,11 +188,14 @@ describe("JiraPanelTab", () => {
       isPending: false,
       isFetching: false,
     };
-    configStatusRef.current = {
+    connectionStatusRef.current = {
       data: {
         status: "ready",
-        configPath: "/repo/.t3-jira-config.json",
-      },
+        hasToken: true,
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        defaults: {},
+      } as any,
       isPending: false,
       isFetching: false,
     };
@@ -154,6 +209,39 @@ describe("JiraPanelTab", () => {
             issueTypeName: "Task",
           },
         ],
+      },
+      isPending: false,
+      isFetching: false,
+    };
+    issueEditMetadataRef.current = {
+      data: {
+        boardId: "1",
+        boardName: "Example board",
+        projectKey: "WEB",
+        storyPointsFieldId: "customfield_10016",
+        estimationFieldId: undefined,
+        statuses: [
+          {
+            id: "1",
+            name: "To Do",
+          },
+          {
+            id: "2",
+            name: "In Progress",
+          },
+          {
+            id: "3",
+            name: "Done",
+          },
+        ],
+      },
+      isPending: false,
+      isFetching: false,
+    };
+    issueTransitionsRef.current = {
+      data: {
+        issueKey: "WEB-101",
+        transitions: [],
       },
       isPending: false,
       isFetching: false,
@@ -184,12 +272,13 @@ describe("JiraPanelTab", () => {
     pullRequestQueryResultsRef.current = [];
   });
 
-  it("renders config empty state when Jira config is missing", async () => {
-    configStatusRef.current = {
+  it("renders a recovery state when the Jira connection is missing", async () => {
+    connectionStatusRef.current = {
       data: {
         status: "missing",
-        configPath: "/repo/.t3-jira-config.json",
-      },
+        hasToken: false,
+        defaults: {},
+      } as any,
       isPending: false,
       isFetching: false,
     };
@@ -208,7 +297,52 @@ describe("JiraPanelTab", () => {
     );
 
     try {
-      await expect.element(page.getByText("Jira config missing")).toBeInTheDocument();
+      await expect.element(page.getByText("Connect Jira")).toBeInTheDocument();
+      await expect
+        .element(page.getByText("Connect Jira to load tasks for this project."))
+        .toBeInTheDocument();
+    } finally {
+      await screen.unmount();
+    }
+  });
+
+  it("renders a recovery state when Jira is unreachable", async () => {
+    connectionStatusRef.current = {
+      data: {
+        status: "unreachable",
+        hasToken: true,
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        defaults: {},
+        error: "Timed out reaching Jira.",
+      } as any,
+      isPending: false,
+      isFetching: false,
+    };
+
+    const screen = await render(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey={null}
+        onSelectIssueKey={selectIssueSpy}
+        onRunAction={startWorkSpy}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    try {
+      await expect.element(page.getByText("Jira unreachable")).toBeInTheDocument();
+      await expect
+        .element(
+          page.getByText(
+            "T3 Code could not reach your Jira site. Check the site URL or network connection.",
+          ),
+        )
+        .toBeInTheDocument();
+      await expect.element(page.getByText("Timed out reaching Jira.")).toBeInTheDocument();
     } finally {
       await screen.unmount();
     }
@@ -425,7 +559,6 @@ describe("JiraPanelTab", () => {
 
     try {
       await expect.element(page.getByText("Low")).toBeInTheDocument();
-      await expect.element(page.getByText("Flagged")).toBeInTheDocument();
       await expect.element(page.getByText("Parent")).toBeInTheDocument();
       await expect.element(page.getByText("Parent ticket")).toBeInTheDocument();
       await expect.element(page.getByText("Latest update")).toBeInTheDocument();

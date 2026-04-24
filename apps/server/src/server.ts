@@ -209,8 +209,17 @@ const RuntimeDependenciesLive = ReactorLayerLive.pipe(
   Layer.provideMerge(ProviderRegistryLive),
   Layer.provideMerge(ServerSettingsLive),
   Layer.provideMerge(JiraConnectionServiceLive.pipe(Layer.provide(ServerSettingsLive))),
-  Layer.provideMerge(JiraConfigLive),
-  Layer.provideMerge(JiraServiceLive.pipe(Layer.provide(JiraConfigLive))),
+  Layer.provideMerge(
+    JiraConfigLive.pipe(
+      Layer.provideMerge(JiraConnectionServiceLive.pipe(Layer.provide(ServerSettingsLive))),
+    ),
+  ),
+  Layer.provideMerge(
+    JiraServiceLive.pipe(
+      Layer.provideMerge(JiraConfigLive),
+      Layer.provideMerge(JiraConnectionServiceLive.pipe(Layer.provide(ServerSettingsLive))),
+    ),
+  ),
   Layer.provideMerge(WorkspaceLayerLive),
   Layer.provideMerge(ProjectFaviconResolverLive),
   Layer.provideMerge(RepositoryIdentityResolverLive),

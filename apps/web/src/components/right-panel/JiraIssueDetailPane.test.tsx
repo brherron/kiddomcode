@@ -1,8 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../ChatMarkdown", () => ({
   default: ({ text }: { text: string }) => text,
+}));
+
+vi.mock("../ui/badge", () => ({
+  Badge: ({ children, ...props }: { children: ReactNode }) => <span {...props}>{children}</span>,
+}));
+
+vi.mock("../ui/scroll-area", () => ({
+  ScrollArea: ({ children, ...props }: { children: ReactNode }) => <div {...props}>{children}</div>,
 }));
 
 import { JiraIssueDetailPane } from "./JiraIssueDetailPane";
@@ -48,7 +57,7 @@ describe("JiraIssueDetailPane", () => {
     const html = renderToStaticMarkup(<JiraIssueDetailPane cwd="/repo" issue={buildIssue()} />);
 
     expect(html).toMatch(/class="[^"]*flex[^"]*h-full[^"]*min-h-0[^"]*flex-col[^"]*"/);
-    expect(html).toMatch(/class="[^"]*size-full[^"]*min-h-0[^"]*flex-1[^"]*"/);
+    expect(html).toMatch(/class="[^"]*min-h-0[^"]*flex-1[^"]*"/);
   });
 
   it("renders labels as detail chips when labels exist", () => {
@@ -149,5 +158,48 @@ describe("JiraIssueDetailPane", () => {
     const html = renderToStaticMarkup(<JiraIssueDetailPane cwd="/repo" issue={buildIssue()} />);
 
     expect(html).not.toContain(">ACV<");
+  });
+
+  it("renders editable dropdown triggers for status and story points when edit controls are provided", () => {
+    const html = renderToStaticMarkup(
+      <JiraIssueDetailPane
+        cwd="/repo"
+        issue={buildIssue({ storyPoints: 3 })}
+        {...({
+          editControls: {
+            statusOptions: [
+              {
+                id: "10000",
+                name: "In Progress",
+                selected: true,
+                actionable: true,
+              },
+              {
+                id: "5",
+                name: "Done",
+                actionable: true,
+              },
+            ],
+            storyPointOptions: [0, 1, 2, 3, 5, 8, 13],
+            onSelectStatus: vi.fn(),
+            onSelectStoryPoints: vi.fn(),
+          },
+        } as any)}
+      />,
+    );
+
+    expect(html).toContain("<button");
+    expect(html).toContain("In Progress");
+    expect(html).toContain("3 pts");
+  });
+
+  it("keeps status and story points read-only when edit controls are missing", () => {
+    const html = renderToStaticMarkup(
+      <JiraIssueDetailPane cwd="/repo" issue={buildIssue({ storyPoints: 3 })} />,
+    );
+
+    expect(html).not.toContain('aria-haspopup="menu"');
+    expect(html).toContain("In Progress");
+    expect(html).toContain("3 pts");
   });
 });

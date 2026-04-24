@@ -4,8 +4,12 @@ import { Effect, Layer } from "effect";
 
 import {
   JiraError,
-  type JiraConnectionStatusResult,
+  type JiraGetIssueEditMetadataInput,
+  type JiraIssueEditMetadataResult,
+  type JiraIssueEditStatus,
   type JiraGetIssueDetailResult,
+  type JiraIssueTransition,
+  type JiraIssueTransitionsResult,
   type JiraIssueComment,
   type JiraIssueDetail,
   type JiraRelatedIssue,
@@ -13,6 +17,10 @@ import {
   type JiraListActiveTasksResult,
   type JiraRunAutomationInput,
   type JiraRunAutomationResult,
+  type JiraUpdateIssueStatusInput,
+  type JiraUpdateIssueStatusResult,
+  type JiraUpdateIssueStoryPointsInput,
+  type JiraUpdateIssueStoryPointsResult,
 } from "@t3tools/contracts";
 import { adfToMarkdown } from "../adfToMarkdown.ts";
 import { JiraConfig } from "../Services/JiraConfig.ts";
@@ -23,6 +31,94 @@ const ACTIVE_TASK_JQL = "assignee = currentUser() AND status != Done ORDER BY up
 const ACTIVE_TASK_MAX_RESULTS = 25;
 const RECENT_COMMENT_LIMIT = 10;
 const ACV_FIELD_ID = "customfield_10040";
+
+type JiraBoardConfiguration = {
+  readonly id?: string | number;
+  readonly name?: string;
+  readonly columnConfig?: {
+    readonly columns?: ReadonlyArray<{
+      readonly name?: string;
+      readonly statuses?: ReadonlyArray<{
+        readonly id?: string | number;
+      }>;
+    }>;
+  };
+  readonly estimation?: {
+    readonly type?: string;
+    readonly field?: {
+      readonly fieldId?: string;
+    };
+  };
+  readonly location?: {
+    readonly key?: string;
+  };
+};
+
+type JiraProjectStatusesResponse = ReadonlyArray<{
+  readonly id?: string | number;
+  readonly name?: string;
+  readonly statuses?: ReadonlyArray<{
+    readonly id?: string | number;
+    readonly name?: string;
+    readonly statusCategory?:
+      | string
+      | {
+          readonly name?: string;
+        };
+  }>;
+}>;
+
+type JiraIssueTransitionsResponse = {
+  readonly transitions?: ReadonlyArray<{
+    readonly id?: string | number;
+    readonly name?: string;
+    readonly to?: {
+      readonly id?: string | number;
+      readonly name?: string;
+      readonly statusCategory?:
+        | string
+        | {
+            readonly name?: string;
+          };
+    };
+  }>;
+};
+
+type JiraIssueEditMetadataResponse = {
+  readonly fields?: Record<
+    string,
+    {
+      readonly name?: string;
+      readonly schema?: {
+        readonly type?: string;
+        readonly custom?: string;
+      };
+    }
+  >;
+};
+
+type JiraIssueNamesResponse = {
+  readonly names?: Record<string, string>;
+};
+
+type JiraBoardsResponse = {
+  readonly values?: ReadonlyArray<{
+    readonly id?: string | number;
+    readonly name?: string;
+    readonly type?: string;
+  }>;
+};
+
+const STORY_POINTS_FIELD_NAME_PATTERN = /story points?|story point estimate/i;
+
+function getProjectKeyFromIssueKey(issueKey: string): string | undefined {
+  const normalized = issueKey.trim();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  const projectKey = normalized.split("-", 1)[0]?.trim();
+  return projectKey && projectKey.length > 0 ? projectKey : undefined;
+}
 
 function toErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error && cause.message.length > 0 ? cause.message : fallback;
@@ -149,12 +245,7 @@ function mapIssueDetail(issue: any, baseUrl: string): JiraIssueDetail {
   const labels = Array.isArray(issue.fields.labels)
     ? issue.fields.labels.map((label: unknown) => String(label))
     : [];
-  // Story points field ID varies per Jira instance (e.g. customfield_10016, customfield_10028, etc.)
-  // so we can't hardcode it like ACV_FIELD_ID. Instead, detect by display name from issue.names.
-  const storyPointsFieldId = Object.entries(issue.names ?? {}).find(
-    ([, name]) =>
-      typeof name === "string" && /story points?|story point estimate/i.test(name.trim()),
-  )?.[0];
+  const storyPointsFieldId = mapStoryPointsFieldIdFromIssue(issue);
   const storyPointsValue =
     storyPointsFieldId && typeof issue.fields[storyPointsFieldId] === "number"
       ? issue.fields[storyPointsFieldId]
@@ -199,8 +290,152 @@ function decodeIssueResponse(payload: any, baseUrl: string): JiraGetIssueDetailR
   };
 }
 
+function findStoryPointsFieldIdFromNames(
+  names: Record<string, string> | undefined,
+): string | undefined {
+  if (!names) {
+    return undefined;
+  }
+
+  return Object.entries(names).find(([, name]) => STORY_POINTS_FIELD_NAME_PATTERN.test(name))?.[0];
+}
+
+function findStoryPointsFieldIdFromEditMetadata(
+  payload: JiraIssueEditMetadataResponse,
+): string | undefined {
+  return Object.entries(payload.fields ?? {}).find(
+    ([, field]) =>
+      typeof field?.name === "string" && STORY_POINTS_FIELD_NAME_PATTERN.test(field.name.trim()),
+  )?.[0];
+}
+
+function mapStoryPointsFieldIdFromIssue(issue: any): string | undefined {
+  return findStoryPointsFieldIdFromNames(
+    issue?.names && typeof issue.names === "object"
+      ? (issue.names as Record<string, string>)
+      : undefined,
+  );
+}
+
+function firstBoardIdFromResponse(payload: JiraBoardsResponse): string | undefined {
+  const boardId = payload.values?.find(
+    (board) => typeof board.id === "string" || typeof board.id === "number",
+  )?.id;
+  return typeof boardId === "string"
+    ? toTrimmedString(boardId)
+    : typeof boardId === "number"
+      ? String(boardId)
+      : undefined;
+}
+
+function readStatusCategoryName(input: unknown): string | undefined {
+  if (typeof input === "string" && input.trim().length > 0) {
+    return input;
+  }
+  if (typeof input === "object" && input !== null && "name" in input) {
+    const name = (input as { readonly name?: unknown }).name;
+    if (typeof name === "string" && name.trim().length > 0) {
+      return name;
+    }
+  }
+  return undefined;
+}
+
+function uniqueById<T extends { readonly id: string }>(values: readonly T[]): T[] {
+  const seen = new Set<string>();
+  return values.filter((value) => {
+    if (seen.has(value.id)) {
+      return false;
+    }
+    seen.add(value.id);
+    return true;
+  });
+}
+
+function toTrimmedString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function mapBoardStatuses(
+  boardConfig: JiraBoardConfiguration,
+  projectStatuses: JiraProjectStatusesResponse,
+): JiraIssueEditStatus[] {
+  const statusLookup = new Map<
+    string,
+    {
+      readonly name: string;
+      readonly statusCategoryName?: string | undefined;
+    }
+  >();
+
+  for (const issueType of projectStatuses) {
+    for (const status of issueType.statuses ?? []) {
+      const id = toTrimmedString(status.id);
+      const name = toTrimmedString(status.name);
+      if (!id || !name) {
+        continue;
+      }
+
+      statusLookup.set(id, {
+        name,
+        ...(readStatusCategoryName(status.statusCategory)
+          ? { statusCategoryName: readStatusCategoryName(status.statusCategory) }
+          : {}),
+      });
+    }
+  }
+
+  const flattenedStatuses = uniqueById(
+    (boardConfig.columnConfig?.columns ?? []).flatMap((column) =>
+      (column.statuses ?? []).flatMap((status) => {
+        const id = toTrimmedString(status.id);
+        if (!id) {
+          return [];
+        }
+
+        const mapped = statusLookup.get(id);
+        return [
+          {
+            id,
+            name: mapped?.name ?? id,
+            ...(mapped?.statusCategoryName
+              ? { statusCategoryName: mapped.statusCategoryName }
+              : {}),
+          },
+        ];
+      }),
+    ),
+  );
+
+  return flattenedStatuses;
+}
+
+function mapIssueTransitions(payload: JiraIssueTransitionsResponse): JiraIssueTransition[] {
+  return (payload.transitions ?? []).flatMap((transition) => {
+    const id = toTrimmedString(transition.id);
+    const name = toTrimmedString(transition.name);
+    if (!id || !name) {
+      return [];
+    }
+
+    const toStatusId = toTrimmedString(transition.to?.id);
+    const toStatusName = toTrimmedString(transition.to?.name);
+    const toStatusCategoryName = readStatusCategoryName(transition.to?.statusCategory);
+
+    return [
+      {
+        id,
+        name,
+        ...(toStatusId ? { toStatusId } : {}),
+        ...(toStatusName ? { toStatusName } : {}),
+        ...(toStatusCategoryName ? { toStatusCategoryName } : {}),
+      },
+    ];
+  });
+}
+
 interface JiraRequestOptions {
-  readonly method?: "GET" | "POST";
+  readonly method?: "GET" | "POST" | "PUT";
   readonly body?: unknown;
   readonly errorKind?: "fetch" | "automation";
 }
@@ -298,12 +533,169 @@ export const makeJiraService = (options?: {
         };
       });
 
+      const resolveStoryPointsFieldId = Effect.fn("JiraService.resolveStoryPointsFieldId")(
+        function* (cwd: string, issueKey: string) {
+          const editMetaResponse = yield* request(
+            cwd,
+            `/rest/api/3/issue/${encodeURIComponent(issueKey)}/editmeta`,
+            "jira.resolveStoryPointsFieldId.editmeta",
+          );
+          const editMetaFieldId = findStoryPointsFieldIdFromEditMetadata(
+            editMetaResponse.payload as JiraIssueEditMetadataResponse,
+          );
+          if (editMetaFieldId) {
+            return editMetaFieldId;
+          }
+
+          const issueResponse = yield* request(
+            cwd,
+            `/rest/api/3/issue/${encodeURIComponent(issueKey)}?fields=summary&expand=names`,
+            "jira.resolveStoryPointsFieldId.issue",
+          );
+          return findStoryPointsFieldIdFromNames(
+            ((issueResponse.payload as JiraIssueNamesResponse).names ?? undefined) as
+              | Record<string, string>
+              | undefined,
+          );
+        },
+      );
+
+      const getIssueEditMetadata = Effect.fn("JiraService.getIssueEditMetadata")(function* (
+        input: JiraGetIssueEditMetadataInput,
+      ) {
+        const connection = yield* jiraConnectionService.getResolvedConnection();
+        const projectKey =
+          toTrimmedString(connection.defaults.projectKey) ??
+          getProjectKeyFromIssueKey(input.issueKey);
+        if (!projectKey) {
+          return yield* new JiraError({
+            kind: "config",
+            operation: "jira.getIssueEditMetadata",
+            message: "Jira project key is not configured.",
+          });
+        }
+
+        const resolvedBoardId =
+          toTrimmedString(connection.defaults.boardId) ??
+          firstBoardIdFromResponse(
+            (yield* request(
+              input.cwd,
+              `/rest/agile/1.0/board?projectKeyOrId=${encodeURIComponent(projectKey)}`,
+              "jira.getIssueEditMetadata.boards",
+            )).payload as JiraBoardsResponse,
+          );
+        if (!resolvedBoardId) {
+          return yield* new JiraError({
+            kind: "config",
+            operation: "jira.getIssueEditMetadata",
+            message: "Jira board id is not configured.",
+          });
+        }
+
+        const boardConfigResponse = yield* request(
+          input.cwd,
+          `/rest/agile/1.0/board/${encodeURIComponent(resolvedBoardId)}/configuration`,
+          "jira.getIssueEditMetadata.board",
+        );
+        const boardConfig = boardConfigResponse.payload as JiraBoardConfiguration;
+        const projectKeyFromBoard = toTrimmedString(boardConfig.location?.key) ?? projectKey;
+
+        const projectStatusesResponse = yield* request(
+          input.cwd,
+          `/rest/api/3/project/${encodeURIComponent(projectKeyFromBoard)}/statuses`,
+          "jira.getIssueEditMetadata.statuses",
+        );
+        const projectStatuses = projectStatusesResponse.payload as JiraProjectStatusesResponse;
+        const storyPointsFieldId = yield* resolveStoryPointsFieldId(input.cwd, input.issueKey);
+
+        return {
+          boardId: resolvedBoardId,
+          boardName: toTrimmedString(boardConfig.name) ?? "Board",
+          projectKey,
+          ...(storyPointsFieldId ? { storyPointsFieldId } : {}),
+          statuses: mapBoardStatuses(boardConfig, projectStatuses),
+        } satisfies JiraIssueEditMetadataResult;
+      });
+
+      const getIssueTransitions = Effect.fn("JiraService.getIssueTransitions")(function* (
+        cwd: string,
+        issueKey: string,
+      ) {
+        const { payload } = yield* request(
+          cwd,
+          `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`,
+          "jira.getIssueTransitions",
+        );
+
+        return {
+          issueKey,
+          transitions: mapIssueTransitions(payload as JiraIssueTransitionsResponse),
+        } satisfies JiraIssueTransitionsResult;
+      });
+
+      const updateIssueStatus = Effect.fn("JiraService.updateIssueStatus")(function* (
+        input: JiraUpdateIssueStatusInput,
+      ) {
+        yield* request(
+          input.cwd,
+          `/rest/api/3/issue/${encodeURIComponent(input.issueKey)}/transitions`,
+          "jira.updateIssueStatus",
+          {
+            method: "POST",
+            body: {
+              transition: {
+                id: input.transitionId,
+              },
+            },
+          },
+        );
+
+        return {
+          issueKey: input.issueKey,
+          transitionId: input.transitionId,
+        } satisfies JiraUpdateIssueStatusResult;
+      });
+
+      const updateIssueStoryPoints = Effect.fn("JiraService.updateIssueStoryPoints")(function* (
+        input: JiraUpdateIssueStoryPointsInput,
+      ) {
+        const storyPointsFieldId = yield* resolveStoryPointsFieldId(input.cwd, input.issueKey);
+        if (!storyPointsFieldId) {
+          return yield* new JiraError({
+            kind: "config",
+            operation: "jira.updateIssueStoryPoints",
+            message: "Jira story points field is not configured.",
+          });
+        }
+
+        yield* request(
+          input.cwd,
+          `/rest/api/3/issue/${encodeURIComponent(input.issueKey)}`,
+          "jira.updateIssueStoryPoints",
+          {
+            method: "PUT",
+            body: {
+              fields: {
+                [storyPointsFieldId]: input.storyPoints,
+              },
+            },
+          },
+        );
+
+        return {
+          issueKey: input.issueKey,
+          storyPoints: input.storyPoints,
+        } satisfies JiraUpdateIssueStoryPointsResult;
+      });
+
       return {
         getConnectionStatus: () => jiraConnectionService.getConnectionStatus(),
         saveConnection: (input) => jiraConnectionService.saveConnection(input),
         testConnection: (input) => jiraConnectionService.testConnection(input),
         disconnect: () => jiraConnectionService.disconnect(),
         getConfigStatus: (cwd: string) => jiraConfig.getConfigStatus(cwd),
+        getIssueEditMetadata: (input: JiraGetIssueEditMetadataInput) => getIssueEditMetadata(input),
+        getIssueTransitions: (cwd: string, issueKey: string) => getIssueTransitions(cwd, issueKey),
         listActiveTasks: (cwd: string) =>
           Effect.gen(function* () {
             const { payload } = yield* request(
@@ -354,6 +746,9 @@ export const makeJiraService = (options?: {
                 }),
             });
           }),
+        updateIssueStatus: (input: JiraUpdateIssueStatusInput) => updateIssueStatus(input),
+        updateIssueStoryPoints: (input: JiraUpdateIssueStoryPointsInput) =>
+          updateIssueStoryPoints(input),
         runAutomation: (input: JiraRunAutomationInput) =>
           Effect.gen(function* () {
             const config = yield* jiraConfig.getResolvedConfig(input.cwd);

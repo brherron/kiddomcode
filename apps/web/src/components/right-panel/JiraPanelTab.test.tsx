@@ -4,8 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const {
   queryClientRef,
   branchQueryRef,
-  configStatusRef,
+  connectionStatusRef,
   activeTasksRef,
+  issueEditMetadataRef,
+  issueTransitionsRef,
   issueDetailRef,
   pullRequestQueryResultsRef,
 } = vi.hoisted(() => ({
@@ -31,12 +33,15 @@ const {
       isFetching: false,
     },
   },
-  configStatusRef: {
+  connectionStatusRef: {
     current: {
       data: {
         status: "ready",
-        configPath: "/repo/.t3-jira-config.json",
-      },
+        hasToken: true,
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        defaults: {},
+      } as any,
       isPending: false,
       isFetching: false,
     },
@@ -52,6 +57,43 @@ const {
             issueTypeName: "Task",
           },
         ],
+      },
+      isPending: false,
+      isFetching: false,
+    },
+  },
+  issueEditMetadataRef: {
+    current: {
+      data: {
+        boardId: "1",
+        boardName: "Example board",
+        projectKey: "WEB",
+        storyPointsFieldId: "customfield_10016",
+        estimationFieldId: undefined,
+        statuses: [
+          {
+            id: "1",
+            name: "To Do",
+          },
+          {
+            id: "2",
+            name: "In Progress",
+          },
+          {
+            id: "3",
+            name: "Done",
+          },
+        ],
+      },
+      isPending: false,
+      isFetching: false,
+    },
+  },
+  issueTransitionsRef: {
+    current: {
+      data: {
+        issueKey: "WEB-101",
+        transitions: [],
       },
       isPending: false,
       isFetching: false,
@@ -88,15 +130,25 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
       if (options.queryKey[0] === "git" && options.queryKey[1] === "branches") {
         return branchQueryRef.current;
       }
-      if (options.queryKey[1] === "config-status") {
-        return configStatusRef.current;
+      if (options.queryKey[1] === "connection-status") {
+        return connectionStatusRef.current;
       }
       if (options.queryKey[1] === "active-tasks") {
         return activeTasksRef.current;
       }
+      if (options.queryKey[1] === "issue-edit-metadata") {
+        return issueEditMetadataRef.current;
+      }
+      if (options.queryKey[1] === "issue-transitions") {
+        return issueTransitionsRef.current;
+      }
       return issueDetailRef.current;
     }),
     useQueries: vi.fn(() => pullRequestQueryResultsRef.current),
+    useMutation: vi.fn(() => ({
+      mutateAsync: vi.fn(),
+      isPending: false,
+    })),
     useQueryClient: vi.fn(() => queryClientRef.current),
   };
 });
@@ -119,6 +171,17 @@ describe("JiraPanelTab", () => {
       isPending: false,
       isFetching: false,
     };
+    connectionStatusRef.current = {
+      data: {
+        status: "ready",
+        hasToken: true,
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        defaults: {},
+      } as any,
+      isPending: false,
+      isFetching: false,
+    };
     activeTasksRef.current = {
       data: {
         issues: [
@@ -129,6 +192,72 @@ describe("JiraPanelTab", () => {
             issueTypeName: "Task",
           },
         ],
+      },
+      isPending: false,
+      isFetching: false,
+    };
+    issueEditMetadataRef.current = {
+      data: {
+        boardId: "1",
+        boardName: "Example board",
+        projectKey: "WEB",
+        storyPointsFieldId: "customfield_10016",
+        estimationFieldId: undefined,
+        statuses: [
+          {
+            id: "1",
+            name: "To Do",
+          },
+          {
+            id: "2",
+            name: "In Progress",
+          },
+          {
+            id: "3",
+            name: "Done",
+          },
+        ],
+      },
+      isPending: false,
+      isFetching: false,
+    };
+    issueTransitionsRef.current = {
+      data: {
+        issueKey: "WEB-101",
+        transitions: [],
+      },
+      isPending: false,
+      isFetching: false,
+    };
+    issueEditMetadataRef.current = {
+      data: {
+        boardId: "1",
+        boardName: "Example board",
+        projectKey: "WEB",
+        storyPointsFieldId: "customfield_10016",
+        estimationFieldId: undefined,
+        statuses: [
+          {
+            id: "1",
+            name: "To Do",
+          },
+          {
+            id: "2",
+            name: "In Progress",
+          },
+          {
+            id: "3",
+            name: "Done",
+          },
+        ],
+      },
+      isPending: false,
+      isFetching: false,
+    };
+    issueTransitionsRef.current = {
+      data: {
+        issueKey: "WEB-101",
+        transitions: [],
       },
       isPending: false,
       isFetching: false,
@@ -150,6 +279,66 @@ describe("JiraPanelTab", () => {
       isFetching: false,
     };
     pullRequestQueryResultsRef.current = [];
+  });
+
+  it("renders a recovery state when the Jira connection is missing", () => {
+    connectionStatusRef.current = {
+      data: {
+        status: "missing",
+        hasToken: false,
+        defaults: {},
+      } as any,
+      isPending: false,
+      isFetching: false,
+    };
+
+    const html = renderToStaticMarkup(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey={null}
+        onSelectIssueKey={vi.fn()}
+        onRunAction={vi.fn()}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    expect(html).toContain("Connect Jira");
+    expect(html).toContain("Connect Jira to load tasks for this project.");
+  });
+
+  it("renders a recovery state when the Jira connection needs new credentials", () => {
+    connectionStatusRef.current = {
+      data: {
+        status: "invalid_auth",
+        hasToken: true,
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        defaults: {},
+        error: "Jira rejected the saved credentials.",
+      } as any,
+      isPending: false,
+      isFetching: false,
+    };
+
+    const html = renderToStaticMarkup(
+      <JiraPanelTab
+        environmentId={"environment-local" as never}
+        cwd="/repo"
+        selectedIssueKey={null}
+        onSelectIssueKey={vi.fn()}
+        onRunAction={vi.fn()}
+        currentBranch={null}
+        hasGitRepo
+        isWorking={false}
+      />,
+    );
+
+    expect(html).toContain("Reconnect Jira");
+    expect(html).toContain("Update them to keep loading tasks.");
+    expect(html).toContain("Jira rejected the saved credentials.");
   });
 
   it("renders continue on branch as the primary action when there is exactly one matching branch", () => {
@@ -312,7 +501,7 @@ describe("JiraPanelTab", () => {
     );
 
     expect(html).toContain("High");
-    expect(html).toContain("Flagged");
+    expect(html).toContain("lucide-flag");
     expect(html).toContain("Parent");
     expect(html).toContain("Parent ticket");
     expect(html).toContain("Latest update");

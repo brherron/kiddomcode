@@ -11,12 +11,19 @@ import {
   JiraError,
   JiraGetConnectionStatusInput,
   JiraGetConfigStatusInput,
+  JiraGetIssueEditMetadataInput,
+  JiraIssueEditMetadataResult,
+  JiraIssueTransitionsResult,
   JiraGetIssueDetailInput,
   JiraGetIssueDetailResult,
   JiraListActiveTasksInput,
   JiraListActiveTasksResult,
   JiraRunAutomationInput,
   JiraRunAutomationResult,
+  JiraUpdateIssueStatusInput,
+  JiraUpdateIssueStatusResult,
+  JiraUpdateIssueStoryPointsInput,
+  JiraUpdateIssueStoryPointsResult,
   JiraSaveConnectionInput,
   JiraTestConnectionInput,
 } from "./jira";
@@ -117,8 +124,12 @@ export const WS_METHODS = {
   jiraTestConnection: "jira.testConnection",
   jiraDisconnect: "jira.disconnect",
   jiraGetConfigStatus: "jira.getConfigStatus",
+  jiraGetIssueEditMetadata: "jira.getIssueEditMetadata",
+  jiraGetIssueTransitions: "jira.getIssueTransitions",
   jiraListActiveTasks: "jira.listActiveTasks",
   jiraGetIssueDetail: "jira.getIssueDetail",
+  jiraUpdateIssueStatus: "jira.updateIssueStatus",
+  jiraUpdateIssueStoryPoints: "jira.updateIssueStoryPoints",
   jiraRunAutomation: "jira.runAutomation",
 
   // Terminal methods
@@ -268,6 +279,18 @@ export const WsJiraGetConfigStatusRpc = Rpc.make(WS_METHODS.jiraGetConfigStatus,
   error: JiraError,
 });
 
+export const WsJiraGetIssueEditMetadataRpc = Rpc.make(WS_METHODS.jiraGetIssueEditMetadata, {
+  payload: JiraGetIssueEditMetadataInput,
+  success: JiraIssueEditMetadataResult,
+  error: JiraError,
+});
+
+export const WsJiraGetIssueTransitionsRpc = Rpc.make(WS_METHODS.jiraGetIssueTransitions, {
+  payload: JiraGetIssueDetailInput,
+  success: JiraIssueTransitionsResult,
+  error: JiraError,
+});
+
 export const WsJiraGetConnectionStatusRpc = Rpc.make(WS_METHODS.jiraGetConnectionStatus, {
   payload: JiraGetConnectionStatusInput,
   success: JiraConnectionStatusResult,
@@ -301,6 +324,18 @@ export const WsJiraListActiveTasksRpc = Rpc.make(WS_METHODS.jiraListActiveTasks,
 export const WsJiraGetIssueDetailRpc = Rpc.make(WS_METHODS.jiraGetIssueDetail, {
   payload: JiraGetIssueDetailInput,
   success: JiraGetIssueDetailResult,
+  error: JiraError,
+});
+
+export const WsJiraUpdateIssueStatusRpc = Rpc.make(WS_METHODS.jiraUpdateIssueStatus, {
+  payload: JiraUpdateIssueStatusInput,
+  success: JiraUpdateIssueStatusResult,
+  error: JiraError,
+});
+
+export const WsJiraUpdateIssueStoryPointsRpc = Rpc.make(WS_METHODS.jiraUpdateIssueStoryPoints, {
+  payload: JiraUpdateIssueStoryPointsInput,
+  success: JiraUpdateIssueStoryPointsResult,
   error: JiraError,
 });
 
@@ -440,8 +475,12 @@ export const WsRpcGroup = RpcGroup.make(
   WsJiraTestConnectionRpc,
   WsJiraDisconnectRpc,
   WsJiraGetConfigStatusRpc,
+  WsJiraGetIssueEditMetadataRpc,
+  WsJiraGetIssueTransitionsRpc,
   WsJiraListActiveTasksRpc,
   WsJiraGetIssueDetailRpc,
+  WsJiraUpdateIssueStatusRpc,
+  WsJiraUpdateIssueStoryPointsRpc,
   WsJiraRunAutomationRpc,
   WsTerminalOpenRpc,
   WsTerminalWriteRpc,

@@ -58,4 +58,37 @@ describe("ChatHeader", () => {
     expect(html).toContain('aria-label="Git"');
     expect(html).toContain(">Jira<");
   });
+
+  it("keeps the Jira button enabled without an active project", () => {
+    const html = renderToStaticMarkup(
+      <ChatHeader
+        activeThreadEnvironmentId={"environment-local" as never}
+        activeThreadId={"thread-1" as never}
+        activeThreadTitle="Thread title"
+        activeProjectName={undefined}
+        isGitRepo
+        openInCwd="/repo"
+        activeProjectScripts={undefined}
+        preferredScriptId={null}
+        keybindings={keybindings as never}
+        availableEditors={[]}
+        terminalAvailable
+        terminalOpen={false}
+        terminalToggleShortcutLabel={null}
+        diffToggleShortcutLabel="Ctrl+D"
+        gitCwd="/repo"
+        diffOpen={false}
+        jiraOpen={false}
+        onRunProjectScript={vi.fn()}
+        onAddProjectScript={vi.fn()}
+        onUpdateProjectScript={vi.fn()}
+        onDeleteProjectScript={vi.fn()}
+        onToggleTerminal={vi.fn()}
+        onToggleGit={vi.fn()}
+        onToggleJira={vi.fn()}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Jira"');
+  });
 });

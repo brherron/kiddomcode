@@ -48,7 +48,7 @@ describe("JiraSaveConnectionInput", () => {
     });
 
     expect(parsed.baseUrl).toBe("https://example.atlassian.net");
-    expect(parsed.defaults.boardId).toBe("23");
+    expect(parsed.defaults?.boardId).toBe("23");
   });
 });
 

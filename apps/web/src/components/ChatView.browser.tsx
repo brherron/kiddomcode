@@ -1644,6 +1644,30 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("opens the Jira panel from a draft thread", async () => {
+    setDraftThreadWithoutWorktree();
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+    });
+
+    try {
+      const jiraButton = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("button")).find(
+            (button) => button.getAttribute("aria-label") === "Jira",
+          ) as HTMLButtonElement | null,
+        "Unable to find Jira button.",
+      );
+      jiraButton.click();
+
+      await expect.element(page.getByText("My Tasks")).toBeInTheDocument();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("does not leak a server worktree path into drawer runtime env when launch context clears it", async () => {
     const snapshot = createSnapshotForTargetUser({
       targetMessageId: "msg-user-launch-context-target" as MessageId,

@@ -1,10 +1,11 @@
 import type {
   EnvironmentId,
   GitResolvedPullRequest,
+  JiraConnectionStatusResult,
   JiraIssueDetail,
   JiraIssueSummary,
 } from "@t3tools/contracts";
-import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircleIcon, ArrowUpDownIcon, ChevronDownIcon, RefreshCwIcon } from "lucide-react";
 
@@ -13,14 +14,23 @@ import { extractJiraIssueKey } from "../../lib/jira";
 import {
   jiraQueryKeys,
   jiraActiveTasksQueryOptions,
-  jiraConfigStatusQueryOptions,
+  jiraConnectionStatusQueryOptions,
+  jiraIssueEditMetadataQueryOptions,
   jiraIssueDetailQueryOptions,
+  jiraIssueTransitionsQueryOptions,
+  updateJiraIssueStatus,
+  updateJiraIssueStoryPoints,
 } from "../../lib/jiraReactQuery";
 import {
   buildJiraWorkActionState,
   type JiraWorkActionBranchContext,
   type JiraWorkActionOption,
 } from "../../lib/jiraWorkActions";
+import {
+  buildJiraStatusEditOptions,
+  buildJiraStoryPointOptions,
+  type JiraIssueEditControls,
+} from "../../lib/jiraIssueEditing";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
@@ -122,6 +132,42 @@ function EmptyState(props: { title: string; description: string; detail?: string
   );
 }
 
+function getJiraRecoveryState(status: JiraConnectionStatusResult) {
+  switch (status.status) {
+    case "missing":
+      return {
+        title: "Connect Jira",
+        description: "Connect Jira to load tasks for this project.",
+        detail: undefined,
+      };
+    case "invalid_auth":
+      return {
+        title: "Reconnect Jira",
+        description:
+          "Your saved Jira credentials were rejected. Update them to keep loading tasks.",
+        detail: status.error,
+      };
+    case "unreachable":
+      return {
+        title: "Jira unreachable",
+        description:
+          "T3 Code could not reach your Jira site. Check the site URL or network connection.",
+        detail: status.error,
+      };
+    case "invalid_config":
+      return {
+        title: "Reconnect Jira",
+        description: "Your saved Jira connection is incomplete. Update it to keep loading tasks.",
+        detail: status.error,
+      };
+    case "ready":
+      return {
+        title: "Jira connected",
+        description: "Jira is already connected on this machine.",
+      };
+  }
+}
+
 export const JiraPanelTab = memo(function JiraPanelTab({
   environmentId,
   cwd,
@@ -146,9 +192,9 @@ export const JiraPanelTab = memo(function JiraPanelTab({
     () => (isWorking ? extractJiraIssueKey(currentBranch) : null),
     [currentBranch, isWorking],
   );
-  const configStatusQuery = useQuery(jiraConfigStatusQueryOptions({ environmentId, cwd }));
-  const configStatus = configStatusQuery.data;
-  const jiraReady = configStatus?.status === "ready";
+  const connectionStatusQuery = useQuery(jiraConnectionStatusQueryOptions());
+  const connectionStatus = connectionStatusQuery.data;
+  const jiraReady = connectionStatus?.status === "ready";
   const activeTasksQuery = useQuery(
     jiraActiveTasksQueryOptions({
       environmentId,
@@ -186,6 +232,78 @@ export const JiraPanelTab = memo(function JiraPanelTab({
   );
 
   const currentIssue = issueDetailQuery.data?.issue ?? null;
+  const issueEditMetadataQuery = useQuery(
+    jiraIssueEditMetadataQueryOptions({
+      environmentId,
+      cwd,
+      issueKey: selectedIssueKey,
+      enabled: jiraReady && selectedIssueKey !== null,
+    }),
+  );
+  const issueTransitionsQuery = useQuery(
+    jiraIssueTransitionsQueryOptions({
+      environmentId,
+      cwd,
+      issueKey: selectedIssueKey,
+      enabled: jiraReady && selectedIssueKey !== null,
+    }),
+  );
+  const updateIssueStatusMutation = useMutation({
+    mutationFn: async (transitionId: string) => {
+      if (!currentIssue || !environmentId || !cwd) {
+        throw new Error("Jira issue status update is unavailable.");
+      }
+      return updateJiraIssueStatus(queryClient, {
+        environmentId,
+        cwd,
+        issueKey: currentIssue.key,
+        transitionId,
+      });
+    },
+  });
+  const updateIssueStoryPointsMutation = useMutation({
+    mutationFn: async (storyPoints: number) => {
+      if (!currentIssue || !environmentId || !cwd) {
+        throw new Error("Jira issue story point update is unavailable.");
+      }
+      return updateJiraIssueStoryPoints(queryClient, {
+        environmentId,
+        cwd,
+        issueKey: currentIssue.key,
+        storyPoints,
+      });
+    },
+  });
+  const editControls = useMemo<JiraIssueEditControls | undefined>(() => {
+    if (!currentIssue || !issueEditMetadataQuery.data) {
+      return undefined;
+    }
+
+    return {
+      statusOptions: buildJiraStatusEditOptions({
+        statuses: issueEditMetadataQuery.data.statuses,
+        transitions: issueTransitionsQuery.data?.transitions ?? [],
+        currentStatusName: currentIssue.statusName,
+      }),
+      storyPointOptions: issueEditMetadataQuery.data.storyPointsFieldId
+        ? buildJiraStoryPointOptions(currentIssue.storyPoints)
+        : [],
+      onSelectStatus: async (transitionId: string) => {
+        await updateIssueStatusMutation.mutateAsync(transitionId);
+      },
+      onSelectStoryPoints: async (storyPoints: number) => {
+        await updateIssueStoryPointsMutation.mutateAsync(storyPoints);
+      },
+      statusBusy: updateIssueStatusMutation.isPending,
+      storyPointsBusy: updateIssueStoryPointsMutation.isPending,
+    };
+  }, [
+    currentIssue,
+    issueEditMetadataQuery.data,
+    issueTransitionsQuery.data,
+    updateIssueStatusMutation,
+    updateIssueStoryPointsMutation,
+  ]);
   const branchQuery = useQuery({
     queryKey: ["git", "branches", environmentId ?? null, cwd ?? null, "jira-work-actions"] as const,
     queryFn: async () => {
@@ -304,34 +422,23 @@ export const JiraPanelTab = memo(function JiraPanelTab({
     );
   }
 
-  if (configStatusQuery.isPending) {
+  if (connectionStatusQuery.isPending) {
     return (
       <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
         <Spinner className="size-4" />
-        Loading Jira configuration…
+        Loading Jira connection…
       </div>
     );
   }
 
-  if (configStatus?.status === "missing") {
+  if (connectionStatus && connectionStatus.status !== "ready") {
+    const recoveryState = getJiraRecoveryState(connectionStatus);
     return (
       <div className="p-3">
         <EmptyState
-          title="Jira config missing"
-          description="Create `.t3-jira-config.json` in the shared repository root to enable Jira."
-          detail={configStatus.configPath}
-        />
-      </div>
-    );
-  }
-
-  if (configStatus?.status === "invalid") {
-    return (
-      <div className="p-3">
-        <EmptyState
-          title="Jira config invalid"
-          description={configStatus.error ?? "The Jira config could not be loaded."}
-          detail={configStatus.configPath}
+          title={recoveryState.title}
+          description={recoveryState.description}
+          {...(recoveryState.detail ? { detail: recoveryState.detail } : {})}
         />
       </div>
     );
@@ -454,6 +561,7 @@ export const JiraPanelTab = memo(function JiraPanelTab({
             <JiraIssueDetailPane
               issue={currentIssue}
               cwd={cwd}
+              editControls={editControls}
               actionSlot={
                 primaryAction ? (
                   <div className="flex shrink-0 items-center">

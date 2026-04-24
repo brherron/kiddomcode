@@ -1,6 +1,6 @@
 import { Effect, Schema } from "effect";
 
-import { PositiveInt, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas";
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString, TrimmedString } from "./baseSchemas";
 
 export const JiraAutomationKind = Schema.Literals(["on_branch_created", "on_pr_opened"]);
 export type JiraAutomationKind = typeof JiraAutomationKind.Type;
@@ -96,6 +96,64 @@ export const JiraIssueDetail = Schema.Struct({
 });
 export type JiraIssueDetail = typeof JiraIssueDetail.Type;
 
+export const JiraIssueEditStatus = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: Schema.String,
+  statusCategoryName: Schema.optional(Schema.String),
+});
+export type JiraIssueEditStatus = typeof JiraIssueEditStatus.Type;
+
+export const JiraIssueEditMetadataResult = Schema.Struct({
+  boardId: TrimmedNonEmptyString,
+  boardName: Schema.String,
+  projectKey: TrimmedNonEmptyString,
+  storyPointsFieldId: Schema.optional(TrimmedNonEmptyString),
+  estimationFieldId: Schema.optional(TrimmedNonEmptyString),
+  statuses: Schema.Array(JiraIssueEditStatus),
+});
+export type JiraIssueEditMetadataResult = typeof JiraIssueEditMetadataResult.Type;
+
+export const JiraIssueTransition = Schema.Struct({
+  id: TrimmedNonEmptyString,
+  name: Schema.String,
+  toStatusId: Schema.optional(TrimmedNonEmptyString),
+  toStatusName: Schema.optional(Schema.String),
+  toStatusCategoryName: Schema.optional(Schema.String),
+});
+export type JiraIssueTransition = typeof JiraIssueTransition.Type;
+
+export const JiraIssueTransitionsResult = Schema.Struct({
+  issueKey: TrimmedNonEmptyString,
+  transitions: Schema.Array(JiraIssueTransition),
+});
+export type JiraIssueTransitionsResult = typeof JiraIssueTransitionsResult.Type;
+
+export const JiraUpdateIssueStatusInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  issueKey: TrimmedNonEmptyString,
+  transitionId: TrimmedNonEmptyString,
+});
+export type JiraUpdateIssueStatusInput = typeof JiraUpdateIssueStatusInput.Type;
+
+export const JiraUpdateIssueStatusResult = Schema.Struct({
+  issueKey: TrimmedNonEmptyString,
+  transitionId: TrimmedNonEmptyString,
+});
+export type JiraUpdateIssueStatusResult = typeof JiraUpdateIssueStatusResult.Type;
+
+export const JiraUpdateIssueStoryPointsInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  issueKey: TrimmedNonEmptyString,
+  storyPoints: NonNegativeInt,
+});
+export type JiraUpdateIssueStoryPointsInput = typeof JiraUpdateIssueStoryPointsInput.Type;
+
+export const JiraUpdateIssueStoryPointsResult = Schema.Struct({
+  issueKey: TrimmedNonEmptyString,
+  storyPoints: NonNegativeInt,
+});
+export type JiraUpdateIssueStoryPointsResult = typeof JiraUpdateIssueStoryPointsResult.Type;
+
 export const JiraGetConfigStatusInput = Schema.Struct({
   cwd: TrimmedNonEmptyString,
 });
@@ -138,6 +196,12 @@ export const JiraGetIssueDetailInput = Schema.Struct({
   issueKey: TrimmedNonEmptyString,
 });
 export type JiraGetIssueDetailInput = typeof JiraGetIssueDetailInput.Type;
+
+export const JiraGetIssueEditMetadataInput = Schema.Struct({
+  cwd: TrimmedNonEmptyString,
+  issueKey: TrimmedNonEmptyString,
+});
+export type JiraGetIssueEditMetadataInput = typeof JiraGetIssueEditMetadataInput.Type;
 
 export const JiraGetIssueDetailResult = Schema.Struct({
   issue: JiraIssueDetail,

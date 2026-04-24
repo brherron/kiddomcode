@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { ScrollArea } from "../ui/scroll-area";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
+import type { JiraIssueEditControls } from "../../lib/jiraIssueEditing";
 
 const MediumIcon = () => (
   <svg
@@ -113,8 +115,7 @@ export function IssueTypeMark(props: { issueTypeName: string; size?: string }) {
         props.size === "small" ? "size-3" : "",
       )}
     >
-      <Icon className={
-        props.size === "small" ? "" : "size-5"} />
+      <Icon className={props.size === "small" ? "" : "size-5"} />
     </div>
   );
 }
@@ -170,11 +171,113 @@ function PriorityChip(props: { priorityName: string | undefined }) {
   );
 }
 
-function StoryPointsChip(props: { storyPoints: number }) {
+function StoryPointsChip(props: { storyPoints?: number | null | undefined }) {
   return (
     <Badge variant="outline" size="sm" className="px-1.5 text-[9px]">
-      {props.storyPoints} pts
+      {typeof props.storyPoints === "number" ? `${props.storyPoints} pts` : "Set points"}
     </Badge>
+  );
+}
+
+function MenuChipTrigger(props: { children: ReactNode; disabled?: boolean }) {
+  return (
+    <MenuTrigger
+      disabled={props.disabled ?? false}
+      render={
+        <button
+          type="button"
+          className="inline-flex items-center gap-1 rounded-full border border-border/60 bg-background px-0.5 py-0.5 text-left text-foreground shadow-sm transition-colors hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-64"
+        />
+      }
+    >
+      {props.children}
+      <ChevronDown className="size-2.5 text-muted-foreground" />
+    </MenuTrigger>
+  );
+}
+
+function EditableStatusChip(props: {
+  statusName: string;
+  statusCategoryName?: string | undefined;
+  editControls: JiraIssueEditControls;
+}) {
+  if (props.editControls.statusOptions.length === 0) {
+    return (
+      <StatusChip statusName={props.statusName} statusCategoryName={props.statusCategoryName} />
+    );
+  }
+
+  return (
+    <Menu>
+      <MenuChipTrigger disabled={props.editControls.statusBusy ?? false}>
+        <StatusChip
+          size="large"
+          statusName={props.statusName}
+          statusCategoryName={props.statusCategoryName}
+        />
+      </MenuChipTrigger>
+      <MenuPopup align="start" className="w-56">
+        {props.editControls.statusOptions.map((option) => (
+          <MenuItem
+            key={option.id}
+            disabled={(props.editControls.statusBusy ?? false) || !option.actionable}
+            onClick={() =>
+              option.transitionId
+                ? void props.editControls.onSelectStatus(option.transitionId)
+                : undefined
+            }
+            className="items-center"
+          >
+            <div className="flex min-w-0 flex-1 items-center gap-2">
+              <StatusChip
+                statusName={option.name}
+                statusCategoryName={option.statusCategoryName}
+                size="small"
+              />
+              {option.selected ? (
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Current
+                </span>
+              ) : null}
+            </div>
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </Menu>
+  );
+}
+
+function EditableStoryPointsChip(props: {
+  storyPoints: number | null | undefined;
+  editControls: JiraIssueEditControls;
+}) {
+  if (props.editControls.storyPointOptions.length === 0) {
+    return <StoryPointsChip storyPoints={props.storyPoints ?? null} />;
+  }
+
+  return (
+    <Menu>
+      <MenuChipTrigger disabled={props.editControls.storyPointsBusy ?? false}>
+        <StoryPointsChip storyPoints={props.storyPoints ?? null} />
+      </MenuChipTrigger>
+      <MenuPopup align="start" className="w-36">
+        {props.editControls.storyPointOptions.map((value) => (
+          <MenuItem
+            key={value}
+            disabled={props.editControls.storyPointsBusy ?? false}
+            onClick={() => void props.editControls.onSelectStoryPoints(value)}
+            className="items-center justify-between"
+          >
+            <span className="text-sm">{value} pts</span>
+            {value === props.storyPoints ? (
+              <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Current
+              </span>
+            ) : null}
+          </MenuItem>
+        ))}
+      </MenuPopup>
+    </Menu>
   );
 }
 
@@ -239,6 +342,7 @@ interface JiraIssueDetailPaneProps {
   issue: JiraIssueDetail;
   cwd: string | null;
   actionSlot?: ReactNode;
+  editControls?: JiraIssueEditControls | undefined;
 }
 
 export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
@@ -250,6 +354,8 @@ export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
   const sortedComments = sortCommentsNewestFirst(comments);
   const latestComment = sortedComments[0] ?? null;
   const previousComments = latestComment ? sortedComments.slice(1) : [];
+  const hasStatusEditControls = (props.editControls?.statusOptions.length ?? 0) > 0;
+  const hasStoryPointEditControls = (props.editControls?.storyPointOptions.length ?? 0) > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -259,7 +365,9 @@ export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
             <div className="w-full flex items-center gap-2">
               <IssueTypeMark issueTypeName={props.issue.issueTypeName} />
               <p className="text-l text-white/30 uppercase">{props.issue.key}</p>
-              <a href={props.issue.url} target="_blank" className="p-0.75 rounded hover:bg-white/5"><ExternalLink className="size-4 text-white/30" /></a>
+              <a href={props.issue.url} target="_blank" className="p-0.75 rounded hover:bg-white/5">
+                <ExternalLink className="size-4 text-white/30" />
+              </a>
               {props.actionSlot ? <div className="shrink-0 ml-auto">{props.actionSlot}</div> : null}
             </div>
             <h3 className="text-xl font-semibold text-foreground">{props.issue.summary}</h3>
@@ -290,12 +398,25 @@ export function JiraIssueDetailPane(props: JiraIssueDetailPaneProps) {
           <div className="flex flex-col gap-4 rounded-xl border border-border/60 bg-card/40 px-3 py-3">
             <DetailRow label="Properties">
               <div className="flex flex-wrap items-center gap-1.5">
-                <StatusChip
-                  size="large"
-                  statusName={props.issue.statusName}
-                  statusCategoryName={props.issue.statusCategoryName}
-                />
-                {typeof props.issue.storyPoints === "number" ? (
+                {props.editControls && hasStatusEditControls ? (
+                  <EditableStatusChip
+                    statusName={props.issue.statusName}
+                    statusCategoryName={props.issue.statusCategoryName}
+                    editControls={props.editControls}
+                  />
+                ) : (
+                  <StatusChip
+                    size="large"
+                    statusName={props.issue.statusName}
+                    statusCategoryName={props.issue.statusCategoryName}
+                  />
+                )}
+                {props.editControls && hasStoryPointEditControls ? (
+                  <EditableStoryPointsChip
+                    storyPoints={props.issue.storyPoints}
+                    editControls={props.editControls}
+                  />
+                ) : typeof props.issue.storyPoints === "number" ? (
                   <StoryPointsChip storyPoints={props.issue.storyPoints} />
                 ) : null}
                 <PriorityChip priorityName={priorityName} />

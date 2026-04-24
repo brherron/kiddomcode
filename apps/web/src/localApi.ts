@@ -115,6 +115,10 @@ export function createLocalApi(rpcClient: WsRpcClient): LocalApi {
       upsertKeybinding: rpcClient.server.upsertKeybinding,
       getSettings: rpcClient.server.getSettings,
       updateSettings: rpcClient.server.updateSettings,
+      getJiraConnectionStatus: rpcClient.server.getJiraConnectionStatus,
+      saveJiraConnection: rpcClient.server.saveJiraConnection,
+      testJiraConnection: rpcClient.server.testJiraConnection,
+      disconnectJira: rpcClient.server.disconnectJira,
     },
   };
 }

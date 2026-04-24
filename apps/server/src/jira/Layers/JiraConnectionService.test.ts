@@ -7,7 +7,9 @@ import { JiraConnectionService } from "../Services/JiraConnectionService";
 import { makeJiraConnectionService } from "./JiraConnectionService";
 
 describe("JiraConnectionService", () => {
-  function makeLayer(fetchImplementation: (input: string | URL, init?: RequestInit) => Promise<Response>) {
+  function makeLayer(
+    fetchImplementation: (input: string | URL, init?: RequestInit) => Promise<Response>,
+  ) {
     return makeJiraConnectionService({ fetchImplementation }).pipe(
       Layer.provide(ServerSettingsService.layerTest()),
       Layer.provide(NodeServices.layer),
@@ -45,11 +47,7 @@ describe("JiraConnectionService", () => {
 
         expect(result.status).toBe("invalid_auth");
         expect(result.hasToken).toBe(true);
-      }).pipe(
-        Effect.provide(
-          makeLayer(async () => new Response("forbidden", { status: 403 })),
-        ),
-      ),
+      }).pipe(Effect.provide(makeLayer(async () => new Response("forbidden", { status: 403 })))),
     );
   });
 

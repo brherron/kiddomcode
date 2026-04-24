@@ -121,6 +121,11 @@ describe("JiraServiceLive", () => {
   function provideService(
     fetchImplementation: (input: string | URL, init?: RequestInit) => Promise<Response>,
   ) {
+    const defaults = {
+      boardId: "23",
+      projectKey: "WEB",
+    };
+
     return makeJiraService({ fetchImplementation }).pipe(
       Layer.provide(configLayer),
       Layer.provide(
@@ -131,7 +136,7 @@ describe("JiraServiceLive", () => {
               hasToken: true,
               baseUrl: resolvedConfig.baseUrl,
               email: resolvedConfig.email,
-              defaults: {},
+              defaults,
             }),
           saveConnection: () =>
             Effect.succeed({
@@ -139,7 +144,7 @@ describe("JiraServiceLive", () => {
               hasToken: true,
               baseUrl: resolvedConfig.baseUrl,
               email: resolvedConfig.email,
-              defaults: {},
+              defaults,
             }),
           testConnection: () =>
             Effect.succeed({
@@ -147,7 +152,7 @@ describe("JiraServiceLive", () => {
               hasToken: true,
               baseUrl: resolvedConfig.baseUrl,
               email: resolvedConfig.email,
-              defaults: {},
+              defaults,
             }),
           disconnect: () => Effect.succeed({ disconnected: true as const }),
           getResolvedConnection: () =>
@@ -155,7 +160,7 @@ describe("JiraServiceLive", () => {
               baseUrl: resolvedConfig.baseUrl,
               email: resolvedConfig.email,
               token: resolvedConfig.token,
-              defaults: {},
+              defaults,
             }),
         }),
       ),
@@ -614,6 +619,311 @@ describe("JiraServiceLive", () => {
             relationshipLabel: "Is idea for",
           },
         ]);
+      }),
+    );
+  });
+
+  it("loads board edit metadata from the board config, project statuses, and issue edit meta", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async (input: string | URL) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          if (url.pathname === "/rest/agile/1.0/board/23/configuration") {
+            return new Response(
+              JSON.stringify({
+                id: 23,
+                name: "Board",
+                columnConfig: {
+                  columns: [
+                    {
+                      name: "In Progress",
+                      statuses: [
+                        {
+                          id: "10000",
+                          self: "https://example.atlassian.net/rest/api/3/status/10000",
+                        },
+                      ],
+                    },
+                    {
+                      name: "Done",
+                      statuses: [
+                        { id: "5", self: "https://example.atlassian.net/rest/api/3/status/5" },
+                      ],
+                    },
+                  ],
+                },
+                estimation: {
+                  type: "field",
+                  field: {
+                    displayName: "Story Points",
+                    fieldId: "customfield_10002",
+                  },
+                },
+                location: {
+                  key: "WEB",
+                },
+              }),
+            );
+          }
+
+          if (url.pathname === "/rest/api/3/project/WEB/statuses") {
+            return new Response(
+              JSON.stringify([
+                {
+                  id: "3",
+                  name: "Task",
+                  statuses: [
+                    {
+                      id: "10000",
+                      name: "In Progress",
+                      statusCategory: "IN_PROGRESS",
+                    },
+                    {
+                      id: "5",
+                      name: "Done",
+                      statusCategory: "DONE",
+                    },
+                  ],
+                },
+              ]),
+            );
+          }
+
+          if (url.pathname === "/rest/api/3/issue/WEB-101/editmeta") {
+            return new Response(
+              JSON.stringify({
+                fields: {
+                  customfield_10002: {
+                    name: "Story Points",
+                  },
+                },
+              }),
+            );
+          }
+
+          throw new Error(`Unexpected URL: ${url.pathname}`);
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueEditMetadata({
+            cwd: "/repo/worktree",
+            issueKey: "WEB-101",
+          });
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result).toEqual({
+          boardId: "23",
+          boardName: "Board",
+          projectKey: "WEB",
+          storyPointsFieldId: "customfield_10002",
+          statuses: [
+            {
+              id: "10000",
+              name: "In Progress",
+              statusCategoryName: "IN_PROGRESS",
+            },
+            {
+              id: "5",
+              name: "Done",
+              statusCategoryName: "DONE",
+            },
+          ],
+        });
+      }),
+    );
+  });
+
+  it("falls back to issue names when edit meta omits the story points field name", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async (input: string | URL) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          if (url.pathname === "/rest/agile/1.0/board/23/configuration") {
+            return new Response(
+              JSON.stringify({
+                id: 23,
+                name: "Board",
+                columnConfig: {
+                  columns: [],
+                },
+                location: {
+                  key: "WEB",
+                },
+              }),
+            );
+          }
+
+          if (url.pathname === "/rest/api/3/project/WEB/statuses") {
+            return new Response(JSON.stringify([]));
+          }
+
+          if (url.pathname === "/rest/api/3/issue/WEB-101/editmeta") {
+            return new Response(
+              JSON.stringify({
+                fields: {
+                  customfield_10002: {},
+                },
+              }),
+            );
+          }
+
+          if (url.pathname === "/rest/api/3/issue/WEB-101") {
+            expect(url.searchParams.get("fields")).toBe("summary");
+            expect(url.searchParams.get("expand")).toBe("names");
+            return new Response(
+              JSON.stringify({
+                names: {
+                  customfield_10002: "Story Points",
+                },
+              }),
+            );
+          }
+
+          throw new Error(`Unexpected URL: ${url.pathname}`);
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueEditMetadata({
+            cwd: "/repo/worktree",
+            issueKey: "WEB-101",
+          });
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result.storyPointsFieldId).toBe("customfield_10002");
+      }),
+    );
+  });
+
+  it("loads issue transitions for the selected ticket", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async (input: string | URL) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          expect(url.pathname).toBe("/rest/api/3/issue/WEB-101/transitions");
+          return new Response(
+            JSON.stringify({
+              transitions: [
+                {
+                  id: "11",
+                  name: "Start Progress",
+                  to: {
+                    id: "10000",
+                    name: "In Progress",
+                    statusCategory: {
+                      name: "In Progress",
+                    },
+                  },
+                },
+                {
+                  id: "21",
+                  name: "Finish",
+                  to: {
+                    id: "5",
+                    name: "Done",
+                    statusCategory: {
+                      name: "Done",
+                    },
+                  },
+                },
+              ],
+            }),
+          );
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.getIssueTransitions("/repo/worktree", "WEB-101");
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result).toEqual({
+          issueKey: "WEB-101",
+          transitions: [
+            {
+              id: "11",
+              name: "Start Progress",
+              toStatusId: "10000",
+              toStatusName: "In Progress",
+              toStatusCategoryName: "In Progress",
+            },
+            {
+              id: "21",
+              name: "Finish",
+              toStatusId: "5",
+              toStatusName: "Done",
+              toStatusCategoryName: "Done",
+            },
+          ],
+        });
+      }),
+    );
+  });
+
+  it("updates issue status through a transition id", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async (input: string | URL, init?: RequestInit) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          expect(url.pathname).toBe("/rest/api/3/issue/WEB-101/transitions");
+          expect(init?.method).toBe("POST");
+          expect(init?.body).toContain('"id":"11"');
+          return new Response(null, { status: 204 });
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.updateIssueStatus({
+            cwd: "/repo/worktree",
+            issueKey: "WEB-101",
+            transitionId: "11",
+          });
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result).toEqual({
+          issueKey: "WEB-101",
+          transitionId: "11",
+        });
+      }),
+    );
+  });
+
+  it("updates issue story points through the board estimation field", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const fetchSpy = vi.fn(async (input: string | URL, init?: RequestInit) => {
+          const url = new URL(typeof input === "string" ? input : input.toString());
+          if (url.pathname === "/rest/api/3/issue/WEB-101/editmeta") {
+            return new Response(
+              JSON.stringify({
+                fields: {
+                  customfield_10002: {
+                    name: "Story Points",
+                  },
+                },
+              }),
+            );
+          }
+
+          expect(url.pathname).toBe("/rest/api/3/issue/WEB-101");
+          expect(init?.method).toBe("PUT");
+          expect(init?.body).toContain('"customfield_10002":8');
+          return new Response(null, { status: 204 });
+        });
+
+        const result = yield* Effect.gen(function* () {
+          const jiraService = yield* JiraService;
+          return yield* jiraService.updateIssueStoryPoints({
+            cwd: "/repo/worktree",
+            issueKey: "WEB-101",
+            storyPoints: 8,
+          });
+        }).pipe(Effect.provide(provideService(fetchSpy)));
+
+        expect(result).toEqual({
+          issueKey: "WEB-101",
+          storyPoints: 8,
+        });
       }),
     );
   });

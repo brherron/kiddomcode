@@ -33,8 +33,12 @@ export function createEnvironmentApi(rpcClient: WsRpcClient): EnvironmentApi {
     },
     jira: {
       getConfigStatus: rpcClient.jira.getConfigStatus,
+      getIssueEditMetadata: rpcClient.jira.getIssueEditMetadata,
+      getIssueTransitions: rpcClient.jira.getIssueTransitions,
       listActiveTasks: rpcClient.jira.listActiveTasks,
       getIssueDetail: rpcClient.jira.getIssueDetail,
+      updateIssueStatus: rpcClient.jira.updateIssueStatus,
+      updateIssueStoryPoints: rpcClient.jira.updateIssueStoryPoints,
       runAutomation: rpcClient.jira.runAutomation,
     },
     orchestration: {

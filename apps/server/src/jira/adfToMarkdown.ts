@@ -13,7 +13,7 @@ interface AdfNode {
 
 function wrapInlineCode(text: string): string {
   // CommonMark: use N+1 backticks as delimiter when content contains runs of backticks
-  const maxRun = Math.max(0, ...([...text.matchAll(/`+/g)].map((m) => m[0].length)));
+  const maxRun = Math.max(0, ...[...text.matchAll(/`+/g)].map((m) => m[0].length));
   const fence = "`".repeat(maxRun + 1);
   // Pad with spaces when content starts/ends with a backtick to avoid ambiguity
   const needsPad = text.startsWith("`") || text.endsWith("`");

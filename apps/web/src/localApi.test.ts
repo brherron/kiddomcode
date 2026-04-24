@@ -82,6 +82,10 @@ const rpcClientMock = {
     upsertKeybinding: vi.fn(),
     getSettings: vi.fn(),
     updateSettings: vi.fn(),
+    getJiraConnectionStatus: vi.fn(),
+    saveJiraConnection: vi.fn(),
+    testJiraConnection: vi.fn(),
+    disconnectJira: vi.fn(),
     subscribeConfig: vi.fn(),
     subscribeLifecycle: vi.fn(),
     subscribeAuthAccess: vi.fn(),
@@ -469,6 +473,70 @@ describe("wsApi", () => {
     expect(rpcClientMock.server.updateSettings).toHaveBeenCalledWith({
       enableAssistantStreaming: true,
     });
+  });
+
+  it("forwards Jira connection management directly to the server RPC client", async () => {
+    rpcClientMock.server.getJiraConnectionStatus.mockResolvedValue({
+      status: "missing",
+      hasToken: false,
+      defaults: {},
+    });
+    rpcClientMock.server.saveJiraConnection.mockResolvedValue({
+      status: "ready",
+      hasToken: true,
+      baseUrl: "https://example.atlassian.net",
+      email: "user@example.com",
+      defaults: {
+        projectKey: "WEB",
+      },
+    });
+    rpcClientMock.server.testJiraConnection.mockResolvedValue({
+      status: "ready",
+      hasToken: true,
+      baseUrl: "https://example.atlassian.net",
+      email: "user@example.com",
+      defaults: {},
+    });
+    rpcClientMock.server.disconnectJira.mockResolvedValue({ disconnected: true });
+    const { createLocalApi } = await import("./localApi");
+
+    const api = createLocalApi(rpcClientMock as never);
+
+    await expect(api.server.getJiraConnectionStatus()).resolves.toEqual({
+      status: "missing",
+      hasToken: false,
+      defaults: {},
+    });
+    await expect(
+      api.server.saveJiraConnection({
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        token: "jira-token",
+        defaults: { projectKey: "WEB" },
+      }),
+    ).resolves.toEqual({
+      status: "ready",
+      hasToken: true,
+      baseUrl: "https://example.atlassian.net",
+      email: "user@example.com",
+      defaults: {
+        projectKey: "WEB",
+      },
+    });
+    await expect(
+      api.server.testJiraConnection({
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        token: "jira-token",
+      }),
+    ).resolves.toEqual({
+      status: "ready",
+      hasToken: true,
+      baseUrl: "https://example.atlassian.net",
+      email: "user@example.com",
+      defaults: {},
+    });
+    await expect(api.server.disconnectJira()).resolves.toEqual({ disconnected: true });
   });
 
   it("forwards context menu metadata to the desktop bridge", async () => {

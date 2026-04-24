@@ -294,7 +294,9 @@ function ChatMarkdown({ text, cwd, isStreaming = false, className }: ChatMarkdow
   );
 
   return (
-    <div className={`chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80${className ? ` ${className}` : ""}`}>
+    <div
+      className={`chat-markdown w-full min-w-0 text-sm leading-relaxed text-foreground/80${className ? ` ${className}` : ""}`}
+    >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={markdownComponents}

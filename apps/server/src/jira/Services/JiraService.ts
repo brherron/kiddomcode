@@ -6,10 +6,17 @@ import type {
   JiraConnectionStatusResult,
   JiraDisconnectResult,
   JiraError,
+  JiraGetIssueEditMetadataInput,
+  JiraIssueEditMetadataResult,
   JiraGetIssueDetailResult,
+  JiraIssueTransitionsResult,
   JiraListActiveTasksResult,
   JiraRunAutomationInput,
   JiraRunAutomationResult,
+  JiraUpdateIssueStatusInput,
+  JiraUpdateIssueStatusResult,
+  JiraUpdateIssueStoryPointsInput,
+  JiraUpdateIssueStoryPointsResult,
   JiraSaveConnectionInput,
   JiraTestConnectionInput,
 } from "@t3tools/contracts";
@@ -29,6 +36,19 @@ export interface JiraServiceShape {
     cwd: string,
     issueKey: string,
   ) => Effect.Effect<JiraGetIssueDetailResult, JiraError>;
+  readonly getIssueEditMetadata: (
+    input: JiraGetIssueEditMetadataInput,
+  ) => Effect.Effect<JiraIssueEditMetadataResult, JiraError>;
+  readonly getIssueTransitions: (
+    cwd: string,
+    issueKey: string,
+  ) => Effect.Effect<JiraIssueTransitionsResult, JiraError>;
+  readonly updateIssueStatus: (
+    input: JiraUpdateIssueStatusInput,
+  ) => Effect.Effect<JiraUpdateIssueStatusResult, JiraError>;
+  readonly updateIssueStoryPoints: (
+    input: JiraUpdateIssueStoryPointsInput,
+  ) => Effect.Effect<JiraUpdateIssueStoryPointsResult, JiraError>;
   readonly runAutomation: (
     input: JiraRunAutomationInput,
   ) => Effect.Effect<JiraRunAutomationResult, JiraError>;
