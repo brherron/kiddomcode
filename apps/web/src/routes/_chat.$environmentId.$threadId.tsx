@@ -211,7 +211,7 @@ function ChatThreadRouteView() {
   const setToolsTab = useJiraToolsStore((s) => s.setToolsTab);
   const toolsOpen = diffOpen || jiraOpen;
 
-  const shouldUseDiffSheet = useMediaQuery(DIFF_INLINE_LAYOUT_MEDIA_QUERY);
+  const shouldUseDiffSheet = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
   const [hasOpenedDiff, setHasOpenedDiff] = useState(diffOpen);
 
   const applyToolsPanelState = useCallback(

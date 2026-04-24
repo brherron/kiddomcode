@@ -197,7 +197,7 @@ import {
 import type { JiraWorkActionOption } from "~/lib/jiraWorkActions";
 import { useJiraToolsStore } from "~/jiraToolsStore";
 import { toggleToolsPanelTarget, type ToolsPanelRouteState } from "~/toolsPanelState";
-import { PlanSidebar } from "./PlanSidebar";
+import PlanSidebar from "./PlanSidebar";
 import { JiraConnectionModal } from "./jira/JiraConnectionModal";
 import { RightPanelSheet } from "./RightPanelSheet";
 
