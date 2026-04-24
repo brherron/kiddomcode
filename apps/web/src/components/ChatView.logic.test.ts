@@ -11,6 +11,7 @@ import {
   deriveComposerSendState,
   hasServerAcknowledgedLocalDispatch,
   reconcileMountedTerminalThreadIds,
+  resolveJiraToggleBehavior,
   resolveSendEnvMode,
   shouldWriteThreadErrorToCurrentServerThread,
   waitForStartedServerThread,
@@ -91,6 +92,24 @@ describe("resolveSendEnvMode", () => {
   it("forces local mode for non-git repositories", () => {
     expect(resolveSendEnvMode({ requestedEnvMode: "worktree", isGitRepo: false })).toBe("local");
     expect(resolveSendEnvMode({ requestedEnvMode: "local", isGitRepo: false })).toBe("local");
+  });
+});
+
+describe("resolveJiraToggleBehavior", () => {
+  it("opens the Jira panel when the machine-level Jira connection is ready", () => {
+    expect(
+      resolveJiraToggleBehavior({
+        jiraConnectionStatus: "ready",
+      }),
+    ).toBe("open-panel");
+  });
+
+  it("opens the connection modal when Jira is not connected", () => {
+    expect(
+      resolveJiraToggleBehavior({
+        jiraConnectionStatus: "missing",
+      }),
+    ).toBe("open-connect-modal");
   });
 });
 

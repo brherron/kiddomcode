@@ -4,6 +4,27 @@ import {
   type GitRunStackedActionResult,
   type GitStatusResult,
   type GitStatusStreamEvent,
+  type JiraConnectionStatusResult,
+  type JiraDisconnectInput,
+  type JiraDisconnectResult,
+  type JiraConfigStatusResult,
+  type JiraGetConnectionStatusInput,
+  type JiraGetConfigStatusInput,
+  type JiraGetIssueEditMetadataInput,
+  type JiraIssueEditMetadataResult,
+  type JiraIssueTransitionsResult,
+  type JiraGetIssueDetailResult,
+  type JiraGetIssueDetailInput,
+  type JiraListActiveTasksResult,
+  type JiraListActiveTasksInput,
+  type JiraRunAutomationResult,
+  type JiraRunAutomationInput,
+  type JiraUpdateIssueStatusInput,
+  type JiraUpdateIssueStatusResult,
+  type JiraUpdateIssueStoryPointsInput,
+  type JiraUpdateIssueStoryPointsResult,
+  type JiraSaveConnectionInput,
+  type JiraTestConnectionInput,
   type LocalApi,
   ORCHESTRATION_WS_METHODS,
   type ServerSettingsPatch,
@@ -97,6 +118,26 @@ export interface WsRpcClient {
       typeof WS_METHODS.gitPreparePullRequestThread
     >;
   };
+  readonly jira: {
+    readonly getConfigStatus: (input: JiraGetConfigStatusInput) => Promise<JiraConfigStatusResult>;
+    readonly getIssueEditMetadata: (
+      input: JiraGetIssueEditMetadataInput,
+    ) => Promise<JiraIssueEditMetadataResult>;
+    readonly getIssueTransitions: (
+      input: JiraGetIssueDetailInput,
+    ) => Promise<JiraIssueTransitionsResult>;
+    readonly listActiveTasks: (
+      input: JiraListActiveTasksInput,
+    ) => Promise<JiraListActiveTasksResult>;
+    readonly getIssueDetail: (input: JiraGetIssueDetailInput) => Promise<JiraGetIssueDetailResult>;
+    readonly updateIssueStatus: (
+      input: JiraUpdateIssueStatusInput,
+    ) => Promise<JiraUpdateIssueStatusResult>;
+    readonly updateIssueStoryPoints: (
+      input: JiraUpdateIssueStoryPointsInput,
+    ) => Promise<JiraUpdateIssueStoryPointsResult>;
+    readonly runAutomation: (input: JiraRunAutomationInput) => Promise<JiraRunAutomationResult>;
+  };
   readonly server: {
     readonly getConfig: RpcUnaryNoArgMethod<typeof WS_METHODS.serverGetConfig>;
     readonly refreshProviders: RpcUnaryNoArgMethod<typeof WS_METHODS.serverRefreshProviders>;
@@ -105,6 +146,16 @@ export interface WsRpcClient {
     readonly updateSettings: (
       patch: ServerSettingsPatch,
     ) => ReturnType<RpcUnaryMethod<typeof WS_METHODS.serverUpdateSettings>>;
+    readonly getJiraConnectionStatus: (
+      input?: JiraGetConnectionStatusInput,
+    ) => Promise<JiraConnectionStatusResult>;
+    readonly saveJiraConnection: (
+      input: JiraSaveConnectionInput,
+    ) => Promise<JiraConnectionStatusResult>;
+    readonly testJiraConnection: (
+      input: JiraTestConnectionInput,
+    ) => Promise<JiraConnectionStatusResult>;
+    readonly disconnectJira: (input?: JiraDisconnectInput) => Promise<JiraDisconnectResult>;
     readonly subscribeConfig: RpcStreamMethod<typeof WS_METHODS.subscribeServerConfig>;
     readonly subscribeLifecycle: RpcStreamMethod<typeof WS_METHODS.subscribeServerLifecycle>;
     readonly subscribeAuthAccess: RpcStreamMethod<typeof WS_METHODS.subscribeAuthAccess>;
@@ -198,6 +249,24 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       preparePullRequestThread: (input) =>
         transport.request((client) => client[WS_METHODS.gitPreparePullRequestThread](input)),
     },
+    jira: {
+      getConfigStatus: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetConfigStatus](input)),
+      getIssueEditMetadata: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetIssueEditMetadata](input)),
+      getIssueTransitions: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetIssueTransitions](input)),
+      listActiveTasks: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraListActiveTasks](input)),
+      getIssueDetail: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraGetIssueDetail](input)),
+      updateIssueStatus: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraUpdateIssueStatus](input)),
+      updateIssueStoryPoints: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraUpdateIssueStoryPoints](input)),
+      runAutomation: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraRunAutomation](input)),
+    },
     server: {
       getConfig: () => transport.request((client) => client[WS_METHODS.serverGetConfig]({})),
       refreshProviders: () =>
@@ -207,6 +276,14 @@ export function createWsRpcClient(transport: WsTransport): WsRpcClient {
       getSettings: () => transport.request((client) => client[WS_METHODS.serverGetSettings]({})),
       updateSettings: (patch) =>
         transport.request((client) => client[WS_METHODS.serverUpdateSettings]({ patch })),
+      getJiraConnectionStatus: (input = {}) =>
+        transport.request((client) => client[WS_METHODS.jiraGetConnectionStatus](input)),
+      saveJiraConnection: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraSaveConnection](input)),
+      testJiraConnection: (input) =>
+        transport.request((client) => client[WS_METHODS.jiraTestConnection](input)),
+      disconnectJira: (input = {}) =>
+        transport.request((client) => client[WS_METHODS.jiraDisconnect](input)),
       subscribeConfig: (listener, options) =>
         transport.subscribe(
           (client) => client[WS_METHODS.subscribeServerConfig]({}),

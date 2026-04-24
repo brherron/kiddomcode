@@ -3,6 +3,7 @@ import type {
   GitStatusRemoteResult,
   GitStatusStreamEvent,
 } from "@t3tools/contracts";
+import { WS_METHODS } from "@t3tools/contracts";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("./wsTransport", () => ({
@@ -100,5 +101,60 @@ describe("wsRpcClient", () => {
         },
       ],
     ]);
+  });
+
+  it("forwards machine-level Jira connection RPCs through the server client", async () => {
+    const transport = {
+      dispose: vi.fn(async () => undefined),
+      reconnect: vi.fn(async () => undefined),
+      request: vi.fn(async (callback: any) =>
+        callback({
+          [WS_METHODS.jiraGetConnectionStatus]: vi.fn(async () => ({
+            status: "missing",
+            hasToken: false,
+            defaults: {},
+          })),
+          [WS_METHODS.jiraSaveConnection]: vi.fn(async (input) => input),
+          [WS_METHODS.jiraTestConnection]: vi.fn(async (input) => input),
+          [WS_METHODS.jiraDisconnect]: vi.fn(async () => ({ disconnected: true })),
+        }),
+      ) as WsTransport["request"],
+      requestStream: vi.fn(),
+      subscribe: vi.fn(() => () => undefined),
+    } satisfies Pick<
+      WsTransport,
+      "dispose" | "reconnect" | "request" | "requestStream" | "subscribe"
+    >;
+
+    const client = createWsRpcClient(transport as unknown as WsTransport);
+
+    await expect(client.server.getJiraConnectionStatus()).resolves.toEqual({
+      status: "missing",
+      hasToken: false,
+      defaults: {},
+    });
+    await expect(
+      client.server.saveJiraConnection({
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        token: "jira-token",
+      }),
+    ).resolves.toEqual({
+      baseUrl: "https://example.atlassian.net",
+      email: "user@example.com",
+      token: "jira-token",
+    });
+    await expect(
+      client.server.testJiraConnection({
+        baseUrl: "https://example.atlassian.net",
+        email: "user@example.com",
+        token: "jira-token",
+      }),
+    ).resolves.toEqual({
+      baseUrl: "https://example.atlassian.net",
+      email: "user@example.com",
+      token: "jira-token",
+    });
+    await expect(client.server.disconnectJira()).resolves.toEqual({ disconnected: true });
   });
 });

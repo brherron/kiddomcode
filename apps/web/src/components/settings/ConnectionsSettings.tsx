@@ -5,8 +5,10 @@ import {
   type AuthPairingLink,
   type DesktopServerExposureState,
   type EnvironmentId,
+  type JiraConnectionStatusResult,
 } from "@t3tools/contracts";
 import { DateTime } from "effect";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { cn } from "../../lib/utils";
@@ -17,6 +19,7 @@ import {
   SettingsSection,
   useRelativeTimeTick,
 } from "./settingsLayout";
+import { JiraConnectionModal } from "../jira/JiraConnectionModal";
 import { Input } from "../ui/input";
 import {
   Dialog,
@@ -67,6 +70,12 @@ import {
   reconnectSavedEnvironment,
   removeSavedEnvironment,
 } from "~/environments/runtime";
+import {
+  disconnectJiraConnection,
+  jiraConnectionStatusQueryOptions,
+  saveJiraConnection,
+  testJiraConnection,
+} from "~/lib/jiraReactQuery";
 
 const accessTimestampFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -751,8 +760,84 @@ function SavedBackendListRow({
   );
 }
 
+function getJiraConnectionDescription(status: JiraConnectionStatusResult | undefined) {
+  if (!status || status.status === "missing") {
+    return "Save Jira credentials on this machine so chat and the Jira panel can reuse them.";
+  }
+
+  if (status.status === "ready") {
+    return "This machine can open Jira tasks from chat and reuse the saved defaults below.";
+  }
+
+  if (status.status === "invalid_auth") {
+    return "Reconnect Jira to fix the saved credentials.";
+  }
+
+  if (status.status === "unreachable") {
+    return "Reconnect Jira to update the site URL or retry when Jira is reachable again.";
+  }
+
+  return "Reconnect Jira to finish the saved setup.";
+}
+
+function renderJiraConnectionStatus(status: JiraConnectionStatusResult | undefined) {
+  if (!status) {
+    return "Loading Jira connection…";
+  }
+
+  if (status.status === "missing") {
+    return "No Jira connection saved on this machine.";
+  }
+
+  if (status.status === "ready") {
+    const identity =
+      status.baseUrl && status.email
+        ? `Connected to ${status.baseUrl} as ${status.email}.`
+        : "Jira is connected on this machine.";
+    const defaults = [
+      status.defaults.projectKey ? `Project ${status.defaults.projectKey}` : null,
+      status.defaults.boardId ? `Board ${status.defaults.boardId}` : null,
+      status.defaults.filterId ? `Filter ${status.defaults.filterId}` : null,
+      status.defaults.jql ? "Custom JQL saved" : null,
+    ].filter((value): value is string => value !== null);
+
+    return (
+      <>
+        <span>{identity}</span>
+        {defaults.length > 0 ? <span className="block pt-1">{defaults.join(" · ")}</span> : null}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <span>{getJiraConnectionDescription(status)}</span>
+      {status.error ? <span className="block pt-1 text-destructive">{status.error}</span> : null}
+    </>
+  );
+}
+
+function getJiraConnectionInitialValues(status: JiraConnectionStatusResult | undefined) {
+  if (!status || status.status === "missing") {
+    return undefined;
+  }
+
+  return {
+    baseUrl: status.baseUrl ?? "",
+    email: status.email ?? "",
+    token: "",
+    projectKey: status.defaults.projectKey ?? "",
+    boardId: status.defaults.boardId ?? "",
+    filterId: status.defaults.filterId ?? "",
+    jql: status.defaults.jql ?? "",
+  };
+}
+
 export function ConnectionsSettings() {
   const desktopBridge = window.desktopBridge;
+  const queryClient = useQueryClient();
+  const jiraConnectionQuery = useQuery(jiraConnectionStatusQueryOptions());
+  const jiraConnectionStatus = jiraConnectionQuery.data;
   const [currentSessionRole, setCurrentSessionRole] = useState<"owner" | "client" | null>(
     desktopBridge ? "owner" : null,
   );
@@ -798,6 +883,8 @@ export function ConnectionsSettings() {
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendError, setSavedBackendError] = useState<string | null>(null);
   const [isAddingSavedBackend, setIsAddingSavedBackend] = useState(false);
+  const [isJiraConnectionModalOpen, setIsJiraConnectionModalOpen] = useState(false);
+  const [isDisconnectingJira, setIsDisconnectingJira] = useState(false);
   const [reconnectingSavedEnvironmentId, setReconnectingSavedEnvironmentId] =
     useState<EnvironmentId | null>(null);
   const [removingSavedEnvironmentId, setRemovingSavedEnvironmentId] =
@@ -810,6 +897,53 @@ export function ConnectionsSettings() {
   const isLocalBackendNetworkAccessible = desktopBridge
     ? desktopServerExposureState?.mode === "network-accessible"
     : currentAuthPolicy === "remote-reachable";
+
+  const handleSaveJiraConnection = useCallback(
+    async (input: Parameters<typeof saveJiraConnection>[1]) => {
+      const result = await saveJiraConnection(queryClient, input);
+      toastManager.add({
+        type: "success",
+        title: "Jira connected",
+        description: "This machine can now reuse your Jira connection in chat and settings.",
+      });
+      return result;
+    },
+    [queryClient],
+  );
+
+  const handleTestJiraConnection = useCallback(
+    async (input: Parameters<typeof testJiraConnection>[0]) => {
+      const result = await testJiraConnection(input);
+      toastManager.add({
+        type: "success",
+        title: "Jira connection verified",
+        description: "The Jira credentials look valid.",
+      });
+      return result;
+    },
+    [],
+  );
+
+  const handleDisconnectJira = useCallback(async () => {
+    setIsDisconnectingJira(true);
+    try {
+      await disconnectJiraConnection(queryClient);
+      toastManager.add({
+        type: "success",
+        title: "Jira disconnected",
+        description: "Saved Jira credentials were removed from this machine.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to disconnect Jira.";
+      toastManager.add({
+        type: "error",
+        title: "Could not disconnect Jira",
+        description: message,
+      });
+    } finally {
+      setIsDisconnectingJira(false);
+    }
+  }, [queryClient]);
 
   const handleDesktopServerExposureChange = useCallback(
     async (checked: boolean) => {
@@ -1267,6 +1401,51 @@ export function ConnectionsSettings() {
         </SettingsSection>
       )}
 
+      <SettingsSection title="Jira">
+        <SettingsRow
+          title="Machine connection"
+          description={getJiraConnectionDescription(jiraConnectionStatus)}
+          status={renderJiraConnectionStatus(jiraConnectionStatus)}
+          control={
+            jiraConnectionQuery.isPending ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Spinner className="size-3.5" />
+                Loading…
+              </div>
+            ) : jiraConnectionStatus?.status === "missing" ? (
+              <Button size="xs" onClick={() => setIsJiraConnectionModalOpen(true)}>
+                Connect
+              </Button>
+            ) : (
+              <>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setIsJiraConnectionModalOpen(true)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="xs"
+                  variant="outline"
+                  onClick={() => setIsJiraConnectionModalOpen(true)}
+                >
+                  Test connection
+                </Button>
+                <Button
+                  size="xs"
+                  variant="destructive-outline"
+                  disabled={isDisconnectingJira}
+                  onClick={() => void handleDisconnectJira()}
+                >
+                  {isDisconnectingJira ? "Disconnecting…" : "Disconnect"}
+                </Button>
+              </>
+            )
+          }
+        />
+      </SettingsSection>
+
       <SettingsSection
         title="Remote environments"
         headerAction={
@@ -1427,6 +1606,13 @@ export function ConnectionsSettings() {
           </div>
         ) : null}
       </SettingsSection>
+      <JiraConnectionModal
+        open={isJiraConnectionModalOpen}
+        onOpenChange={setIsJiraConnectionModalOpen}
+        initialValues={getJiraConnectionInitialValues(jiraConnectionStatus)}
+        onSubmit={handleSaveJiraConnection}
+        onTestConnection={handleTestJiraConnection}
+      />
     </SettingsPageContainer>
   );
 }

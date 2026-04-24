@@ -9,6 +9,7 @@ apps/*/dist
 packages/*/dist
 .env
 .env.local
+.t3-jira-config.json
 build/
 .logs/
 release/
@@ -22,3 +23,4 @@ apps/web/src/components/__screenshots__
 __screenshots__/
 .tanstack
 squashfs-root/
+worktrees/

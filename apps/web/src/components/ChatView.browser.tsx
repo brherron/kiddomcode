@@ -1644,6 +1644,30 @@ describe("ChatView timeline estimator parity (full app)", () => {
     }
   });
 
+  it("opens the Jira panel from a draft thread", async () => {
+    setDraftThreadWithoutWorktree();
+
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createDraftOnlySnapshot(),
+    });
+
+    try {
+      const jiraButton = await waitForElement(
+        () =>
+          Array.from(document.querySelectorAll("button")).find(
+            (button) => button.getAttribute("aria-label") === "Jira",
+          ) as HTMLButtonElement | null,
+        "Unable to find Jira button.",
+      );
+      jiraButton.click();
+
+      await expect.element(page.getByText("My Tasks")).toBeInTheDocument();
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
   it("does not leak a server worktree path into drawer runtime env when launch context clears it", async () => {
     const snapshot = createSnapshotForTargetUser({
       targetMessageId: "msg-user-launch-context-target" as MessageId,
@@ -4686,6 +4710,46 @@ describe("ChatView timeline estimator parity (full app)", () => {
         },
         { timeout: 8_000, interval: 16 },
       );
+    } finally {
+      await mounted.cleanup();
+    }
+  });
+
+  it("inserts provider slash commands into the composer", async () => {
+    const mounted = await mountChatView({
+      viewport: DEFAULT_VIEWPORT,
+      snapshot: createSnapshotForTargetUser({
+        targetMessageId: "msg-user-provider-command-target" as MessageId,
+        targetText: "provider command thread",
+      }),
+      configureFixture: (nextFixture) => {
+        nextFixture.serverConfig = {
+          ...nextFixture.serverConfig,
+          providers: nextFixture.serverConfig.providers.map((provider) =>
+            provider.provider === "codex"
+              ? {
+                  ...provider,
+                  slashCommands: [
+                    {
+                      name: "compact",
+                      description: "Compact this thread's context window.",
+                    },
+                  ],
+                }
+              : provider,
+          ),
+        };
+      },
+    });
+
+    try {
+      await waitForComposerEditor();
+      await page.getByTestId("composer-editor").fill("/");
+
+      const menuItem = await waitForComposerMenuItem("provider-slash-command:codex:compact");
+      menuItem.click();
+
+      await waitForComposerText("/compact ");
     } finally {
       await mounted.cleanup();
     }

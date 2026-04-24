@@ -8,6 +8,7 @@ import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
 } from "./model";
 import { ModelSelection } from "./orchestration";
+import { JiraConnectionSettings } from "./jira";
 
 // ── Client Settings (local-only) ───────────────────────────────
 
@@ -98,6 +99,7 @@ export const ServerSettings = Schema.Struct({
     codex: CodexSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
     claudeAgent: ClaudeSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   }).pipe(Schema.withDecodingDefault(Effect.succeed({}))),
+  jira: JiraConnectionSettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
   observability: ObservabilitySettings.pipe(Schema.withDecodingDefault(Effect.succeed({}))),
 });
 export type ServerSettings = typeof ServerSettings.Type;
@@ -165,6 +167,20 @@ const ClaudeSettingsPatch = Schema.Struct({
   customModels: Schema.optionalKey(Schema.Array(Schema.String)),
 });
 
+const JiraConnectionDefaultsPatch = Schema.Struct({
+  projectKey: Schema.optionalKey(Schema.String),
+  boardId: Schema.optionalKey(Schema.String),
+  filterId: Schema.optionalKey(Schema.String),
+  jql: Schema.optionalKey(Schema.String),
+});
+
+const JiraConnectionSettingsPatch = Schema.Struct({
+  baseUrl: Schema.optionalKey(Schema.String),
+  email: Schema.optionalKey(Schema.String),
+  token: Schema.optionalKey(Schema.String),
+  defaults: Schema.optionalKey(JiraConnectionDefaultsPatch),
+});
+
 export const ServerSettingsPatch = Schema.Struct({
   enableAssistantStreaming: Schema.optionalKey(Schema.Boolean),
   defaultThreadEnvMode: Schema.optionalKey(ThreadEnvMode),
@@ -181,5 +197,6 @@ export const ServerSettingsPatch = Schema.Struct({
       claudeAgent: Schema.optionalKey(ClaudeSettingsPatch),
     }),
   ),
+  jira: Schema.optionalKey(JiraConnectionSettingsPatch),
 });
 export type ServerSettingsPatch = typeof ServerSettingsPatch.Type;

@@ -163,6 +163,18 @@ export function resolveSendEnvMode(input: {
   return input.isGitRepo ? input.requestedEnvMode : "local";
 }
 
+export function resolveJiraToggleBehavior(input: {
+  jiraConnectionStatus:
+    | "missing"
+    | "ready"
+    | "invalid_auth"
+    | "unreachable"
+    | "invalid_config"
+    | null;
+}): "disabled" | "open-panel" | "open-connect-modal" {
+  return input.jiraConnectionStatus === "ready" ? "open-panel" : "open-connect-modal";
+}
+
 export function cloneComposerImageForRetry(
   image: ComposerImageAttachment,
 ): ComposerImageAttachment {

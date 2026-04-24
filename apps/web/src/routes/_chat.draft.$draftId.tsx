@@ -2,17 +2,28 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo } from "react";
 import ChatView from "../components/ChatView";
 import { threadHasStarted } from "../components/ChatView.logic";
+import { JiraSidePanel } from "../components/right-panel/JiraSidePanel";
 import { useComposerDraftStore, DraftId } from "../composerDraftStore";
 import { SidebarInset } from "../components/ui/sidebar";
 import { createThreadSelectorAcrossEnvironments } from "../storeSelectors";
 import { useStore } from "../store";
 import { buildThreadRouteParams } from "../threadRoutes";
+import { useJiraToolsStore } from "../jiraToolsStore";
 
 function DraftChatThreadRouteView() {
   const navigate = useNavigate();
   const { draftId: rawDraftId } = Route.useParams();
   const draftId = DraftId.make(rawDraftId);
   const draftSession = useComposerDraftStore((store) => store.getDraftSession(draftId));
+  const jiraOpen = useJiraToolsStore((store) => store.jiraOpen);
+  const selectedIssueKey = useJiraToolsStore((store) => store.selectedIssueKey);
+  const setSelectedIssueKey = useJiraToolsStore((store) => store.setSelectedIssueKey);
+  const setJiraOpen = useJiraToolsStore((store) => store.setJiraOpen);
+  const runJiraActionHandler = useJiraToolsStore((store) => store.runJiraActionHandler);
+  const jiraCwd = useJiraToolsStore((store) => store.jiraCwd);
+  const currentBranch = useJiraToolsStore((store) => store.currentBranch);
+  const hasGitRepo = useJiraToolsStore((store) => store.hasGitRepo);
+  const isWorking = useJiraToolsStore((store) => store.isWorking);
   const serverThread = useStore(
     useMemo(
       () => createThreadSelectorAcrossEnvironments(draftSession?.threadId ?? null),
@@ -71,12 +82,33 @@ function DraftChatThreadRouteView() {
 
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none bg-background text-foreground">
-      <ChatView
-        draftId={draftId}
-        environmentId={draftSession.environmentId}
-        threadId={draftSession.threadId}
-        routeKind="draft"
-      />
+      <div className="flex h-full min-h-0 min-w-0 flex-1">
+        <ChatView
+          draftId={draftId}
+          environmentId={draftSession.environmentId}
+          threadId={draftSession.threadId}
+          routeKind="draft"
+        />
+        {jiraOpen ? (
+          <JiraSidePanel
+            environmentId={draftSession.environmentId}
+            cwd={jiraCwd}
+            selectedIssueKey={selectedIssueKey}
+            onSelectIssueKey={setSelectedIssueKey}
+            onClose={() => {
+              setJiraOpen(false);
+            }}
+            onRunAction={(issue, action) => {
+              if (runJiraActionHandler) {
+                void runJiraActionHandler(issue, action);
+              }
+            }}
+            currentBranch={currentBranch}
+            hasGitRepo={hasGitRepo}
+            isWorking={isWorking}
+          />
+        ) : null}
+      </div>
     </SidebarInset>
   );
 }

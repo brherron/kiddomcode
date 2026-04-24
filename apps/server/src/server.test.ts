@@ -82,6 +82,7 @@ import { ServerLifecycleEvents, type ServerLifecycleEventsShape } from "./server
 import { ServerRuntimeStartup, type ServerRuntimeStartupShape } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService, type ServerSettingsShape } from "./serverSettings.ts";
 import { TerminalManager, type TerminalManagerShape } from "./terminal/Services/Manager.ts";
+import { JiraService, type JiraServiceShape } from "./jira/Services/JiraService.ts";
 import {
   BrowserTraceCollector,
   type BrowserTraceCollectorShape,
@@ -308,6 +309,7 @@ const buildAppUnderTest = (options?: {
     serverRuntimeStartup?: Partial<ServerRuntimeStartupShape>;
     serverEnvironment?: Partial<ServerEnvironmentShape>;
     repositoryIdentityResolver?: Partial<RepositoryIdentityResolverShape>;
+    jiraService?: Partial<JiraServiceShape>;
   };
 }) =>
   Effect.gen(function* () {
@@ -400,6 +402,63 @@ const buildAppUnderTest = (options?: {
         Layer.mock(ProjectSetupScriptRunner)({
           runForThread: () => Effect.succeed({ status: "no-script" as const }),
           ...options?.layers?.projectSetupScriptRunner,
+        }),
+      ),
+      Layer.provide(
+        Layer.mock(JiraService)({
+          getConnectionStatus: () =>
+            Effect.succeed({
+              status: "missing",
+              hasToken: false,
+              defaults: {},
+            }),
+          saveConnection: (input) =>
+            Effect.succeed({
+              status: "ready",
+              hasToken: true,
+              baseUrl: input.baseUrl,
+              email: input.email,
+              defaults: input.defaults ?? {},
+            }),
+          testConnection: (input) =>
+            Effect.succeed({
+              status: "ready",
+              hasToken: true,
+              baseUrl: input.baseUrl,
+              email: input.email,
+              defaults: input.defaults ?? {},
+            }),
+          disconnect: () => Effect.succeed({ disconnected: true }),
+          getConfigStatus: () =>
+            Effect.succeed({
+              status: "missing",
+              configPath: "/tmp/repo/.t3-jira-config.json",
+            }),
+          listActiveTasks: () => Effect.succeed({ issues: [] }),
+          getIssueDetail: (_cwd, issueKey) =>
+            Effect.succeed({
+              issue: {
+                key: issueKey,
+                summary: "Issue summary",
+                statusName: "To Do",
+                issueTypeName: "Task",
+                descriptionMarkdown: "",
+                labels: [],
+                relatedIssues: [],
+                isFlagged: false,
+                comments: [],
+                url: `https://example.atlassian.net/browse/${issueKey}`,
+              },
+            }),
+          runAutomation: (input) =>
+            Effect.succeed({
+              issueKey: input.issueKey,
+              automation: input.automation,
+              transitionAttempted: false,
+              transitionApplied: false,
+              commentAdded: false,
+            }),
+          ...options?.layers?.jiraService,
         }),
       ),
       Layer.provide(
@@ -2368,6 +2427,81 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           }),
         ),
       );
+
+      const jiraConfigStatus = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraGetConfigStatus]({
+            cwd: "/tmp/repo",
+          }),
+        ),
+      );
+      assert.equal(jiraConfigStatus.status, "missing");
+
+      const jiraConnectionStatus = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.jiraGetConnectionStatus]({})),
+      );
+      assert.equal(jiraConnectionStatus.status, "missing");
+
+      const jiraTestConnection = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraTestConnection]({
+            baseUrl: "https://example.atlassian.net",
+            email: "user@example.com",
+            token: "jira-token",
+          }),
+        ),
+      );
+      assert.equal(jiraTestConnection.status, "ready");
+
+      const jiraSavedConnection = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraSaveConnection]({
+            baseUrl: "https://example.atlassian.net",
+            email: "user@example.com",
+            token: "jira-token",
+            defaults: {
+              projectKey: "WEB",
+            },
+          }),
+        ),
+      );
+      assert.equal(jiraSavedConnection.status, "ready");
+
+      const jiraDisconnect = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) => client[WS_METHODS.jiraDisconnect]({})),
+      );
+      assert.equal(jiraDisconnect.disconnected, true);
+
+      const jiraTasks = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraListActiveTasks]({
+            cwd: "/tmp/repo",
+          }),
+        ),
+      );
+      assert.deepEqual(jiraTasks.issues, []);
+
+      const jiraDetail = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraGetIssueDetail]({
+            cwd: "/tmp/repo",
+            issueKey: "WEB-101",
+          }),
+        ),
+      );
+      assert.equal(jiraDetail.issue.key, "WEB-101");
+
+      const jiraAutomation = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[WS_METHODS.jiraRunAutomation]({
+            cwd: "/tmp/repo",
+            issueKey: "WEB-101",
+            automation: "on_pr_opened",
+            commentText: "Opened PR: https://example.com/pr/1",
+          }),
+        ),
+      );
+      assert.equal(jiraAutomation.issueKey, "WEB-101");
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
